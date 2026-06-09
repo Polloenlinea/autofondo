@@ -1,33 +1,52 @@
-import { useState, useEffect } from 'react'
-import { dbGetAll, dbPut, dbDelete } from '../utils/db'
+import { useState, useEffect, useCallback } from 'react'
+import * as api from '../services/api'
 
-const MAX = 3
-
+/**
+ * Hook para historial de fondos personalizados (últimos 3) via MongoDB.
+ * Reemplaza la versión IndexedDB.
+ */
 export function useBgHistory() {
   const [recent, setRecent] = useState([])
 
   useEffect(() => {
-    dbGetAll('bg_history').then(all => {
-      setRecent(all.sort((a,b) => b.date - a.date).slice(0, MAX))
-    }).catch(() => {})
+    api.getBgHistory()
+      .then(data => { if (data.ok) setRecent(data.items || []) })
+      .catch(() => {})
   }, [])
 
-  const addBg = async (file) => {
-    // Read file as dataUrl
-    const dataUrl = await new Promise(res => {
-      const r = new FileReader()
-      r.onload = e => res(e.target.result)
-      r.readAsDataURL(file)
+  /**
+   * Agregar fondo al historial.
+   * @param {File} file — archivo de imagen seleccionado por el usuario
+   */
+  const addBg = useCallback(async (file) => {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload  = e => resolve(e.target.result)
+      reader.onerror = reject
+      reader.readAsDataURL(file)
     })
-    const item = { id: Date.now().toString(), name: file.name, date: Date.now(), dataUrl }
-    await dbPut('bg_history', item)
-    setRecent(prev => {
-      const next = [item, ...prev.filter(i => i.name !== file.name)].slice(0, MAX)
-      // clean up old entries beyond MAX
-      prev.filter(i => i.name !== file.name).slice(MAX - 1).forEach(old => dbDelete('bg_history', old.id).catch(()=>{}))
-      return next
-    })
-  }
+
+    // Actualización optimista: mostrar inmediatamente en la UI
+    const optimistic = {
+      _id:     `local_${Date.now()}`,
+      name:    file.name,
+      date:    new Date().toISOString(),
+      dataUrl,
+    }
+    setRecent(prev => [optimistic, ...prev.filter(i => i.name !== file.name)].slice(0, 3))
+
+    // Persistir en servidor (sin bloquear la UI)
+    api.addBgHistory(file.name, dataUrl)
+      .then(data => {
+        if (data.ok) {
+          // Reemplazar el id optimista por el real de Mongo
+          setRecent(prev => prev.map(i =>
+            i._id === optimistic._id ? { ...i, _id: data.id } : i
+          ))
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   return { recent, addBg }
 }

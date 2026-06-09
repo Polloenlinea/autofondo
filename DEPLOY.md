@@ -15,10 +15,11 @@
 | Node.js | **v20 LTS** | Requerido por el modelo de IA (@imgly) |
 | npm | v10+ | Viene con Node 20 |
 | PM2 | v5+ | `npm install -g pm2` |
+| MongoDB | **v6+** | Local o Atlas — ver Paso 3 |
 | Nginx | cualquier | En el servidor ya debería estar instalado |
 | Certbot | cualquier | Para SSL automático |
 | RAM | **2 GB mínimo** | El modelo de IA usa ~800 MB al cargar |
-| Disco | **3 GB mínimo** | `node_modules` del backend ocupa ~1.5 GB |
+| Disco | **3 GB mínimo** | `node_modules` (~1.5 GB) + caché IA (~200 MB) |
 
 ---
 
@@ -57,7 +58,54 @@ cd autofondo
 
 ---
 
-## Paso 3 — Build y deploy
+## Paso 3 — Instalar y configurar MongoDB
+
+AutoFondo usa MongoDB para persistir sesiones, historial de fondos y logos por usuario.
+
+### Opción A — MongoDB local en el mismo servidor (más simple)
+
+```bash
+# Ubuntu/Debian — instalar MongoDB Community 7
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc \
+  | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] \
+  https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" \
+  | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+
+sudo apt update
+sudo apt install -y mongodb-org
+
+# Iniciar y habilitar el servicio
+sudo systemctl start mongod
+sudo systemctl enable mongod
+
+# Verificar que está corriendo
+sudo systemctl status mongod
+```
+
+La URI a usar es `mongodb://127.0.0.1:27017/autofondo` (ya es el valor por defecto en `ecosystem.config.js`).
+
+### Opción B — MongoDB Atlas (recomendado para producción robusta)
+
+1. Crear cuenta gratuita en [mongodb.com/atlas](https://www.mongodb.com/atlas)
+2. Crear un cluster (el tier M0 gratuito es suficiente para empezar)
+3. Crear usuario de base de datos con contraseña
+4. En "Network Access" → agregar la IP del servidor (o `0.0.0.0/0` para acceso desde cualquier IP)
+5. Copiar la Connection String: `mongodb+srv://usuario:contraseña@cluster.mongodb.net/autofondo?retryWrites=true&w=majority`
+6. Editar `ecosystem.config.js` y reemplazar el valor de `MONGODB_URI` en `env_production`
+
+### Verificar la conexión
+
+```bash
+# Al iniciar la app, los logs deben mostrar:
+#   ✅ MongoDB conectado → mongodb://127.0.0.1:27017/autofondo
+pm2 logs autofondo | grep MongoDB
+```
+
+---
+
+## Paso 4 — Build y deploy
 
 ```bash
 # Dar permisos al script (solo la primera vez)
@@ -240,21 +288,57 @@ Internet
 El archivo `ecosystem.config.js` ya tiene las variables correctas para producción.  
 Si necesitás cambiarlas, editá ese archivo y ejecutá `pm2 reload ecosystem.config.js --env production`.
 
-| Variable | Valor producción |
-|---|---|
-| `NODE_ENV` | `production` |
-| `PORT` | `3001` |
-| `ALLOWED_ORIGIN` | `https://autofondo.artificialmente.com` |
+| Variable | Valor producción | Descripción |
+|---|---|---|
+| `NODE_ENV` | `production` | Habilita modo producción |
+| `PORT` | `3001` | Puerto interno (Nginx hace proxy aquí) |
+| `ALLOWED_ORIGIN` | `https://autofondo.artificialmente.com` | CORS permitido |
+| `MONGODB_URI` | `mongodb://127.0.0.1:27017/autofondo` | URI de MongoDB |
 
 ---
 
-## ⚠️ Advertencia importante — Primera imagen
+## ⚠️ Modelo de IA — Caché y primer arranque
 
-La primera vez que se procesa una imagen después de iniciar el servidor, el modelo de IA de `@imgly/background-removal-node` descarga y carga sus archivos en memoria. Esto puede tardar **30-60 segundos** y ocupar hasta **1 GB de RAM adicional temporalmente**.
+AutoFondo usa `@imgly/background-removal-node` para eliminar fondos de imágenes. Este paquete descarga y cachea archivos del modelo ONNX (~100 MB) **la primera vez que se inicia el servidor**.
 
-A partir de la segunda imagen, el modelo ya está en memoria y la eliminación de fondo tarda **5-15 segundos** por imagen.
+### Lo que ocurre al iniciar:
 
-**Esto es normal y esperado.** No reiniciar el proceso si parece que se "cuelga" en la primera imagen.
+```
+[server start]  → el proceso llama warmup() automáticamente en background
+⏳ Cargando modelo de IA...
+   (descarga ~100 MB si es la primera vez, ~10-30 seg)
+✅ Modelo listo
+```
+
+A partir de ese momento el modelo queda en memoria. **No reiniciar el proceso** si parece lento en el primer arranque.
+
+### Caché del modelo (persistencia entre deploys)
+
+El modelo se guarda en `backend/.cache/` (directorio creado automáticamente por @imgly).  
+Este directorio **ya está en `.gitignore`** — no se sube a GitHub, pero se preserva en el servidor entre deploys porque `git pull` no lo toca.
+
+```bash
+# Ver tamaño del caché (referencia: ~100-200 MB)
+du -sh /var/www/autofondo/backend/.cache/ 2>/dev/null || echo "Caché no creado aún"
+```
+
+Si necesitás forzar una re-descarga (ej. después de actualizar la versión del modelo):
+```bash
+rm -rf /var/www/autofondo/backend/.cache/
+pm2 restart autofondo
+# El modelo se descarga de nuevo en el próximo warmup (~10-30 seg)
+```
+
+### RAM requerida
+
+| Momento | RAM del proceso |
+|---|---|
+| Servidor idle | ~150 MB |
+| Modelo cargando (warmup) | ~800 MB pico |
+| Modelo en memoria (steady state) | ~500-600 MB |
+| Durante procesamiento de imagen | ~800 MB pico |
+
+Por eso el requisito mínimo es **2 GB de RAM** en el servidor.
 
 ---
 
@@ -286,4 +370,30 @@ pm2 logs autofondo
 ```
 
 **Disco lleno:**
-El modelo de IA crea una carpeta caché (`.imgly-cache/` o similar). Podés limpiarla si es necesario, se regenera automáticamente.
+El modelo de IA crea una carpeta caché en `backend/.cache/`. Podés limpiarla si es necesario — se regenera automáticamente al reiniciar el servidor.
+
+```bash
+rm -rf backend/.cache/
+pm2 restart autofondo
+```
+
+**MongoDB no conecta:**
+```bash
+# Verificar que mongod está corriendo
+sudo systemctl status mongod
+
+# Revisar logs de MongoDB
+sudo journalctl -u mongod --since "5 min ago"
+
+# Probar conexión manual
+mongosh mongodb://127.0.0.1:27017/autofondo --eval "db.runCommand({ ping: 1 })"
+```
+
+**Sesiones/historial no se guardan (error 503 en /api/v1/sessions):**  
+El servidor puede arrancar aunque MongoDB no esté disponible (no corta el proceso). Las rutas de persistencia devuelven 503 hasta que MongoDB esté accesible.
+
+```bash
+# Iniciar MongoDB
+sudo systemctl start mongod
+# No hace falta reiniciar PM2 — mongoose reintentará conectar automáticamente
+```

@@ -1,26 +1,45 @@
-import { useState, useEffect } from 'react'
-import { dbGetAll, dbPut, dbDelete } from '../utils/db'
+import { useState, useEffect, useCallback } from 'react'
+import * as api from '../services/api'
 
-const MAX = 3
-
+/**
+ * Hook para historial de logos (marca de agua), últimos 3, via MongoDB.
+ * Reemplaza la versión IndexedDB.
+ */
 export function useWmHistory() {
   const [recent, setRecent] = useState([])
 
   useEffect(() => {
-    dbGetAll('wm_history').then(all => {
-      setRecent(all.sort((a,b) => b.date - a.date).slice(0, MAX))
-    }).catch(() => {})
+    api.getWmHistory()
+      .then(data => { if (data.ok) setRecent(data.items || []) })
+      .catch(() => {})
   }, [])
 
-  const addWm = async (file, dataUrl) => {
-    const item = { id: Date.now().toString(), name: file.name, date: Date.now(), dataUrl }
-    await dbPut('wm_history', item)
-    setRecent(prev => {
-      const next = [item, ...prev.filter(i => i.name !== file.name)].slice(0, MAX)
-      prev.filter(i => i.name !== file.name).slice(MAX - 1).forEach(old => dbDelete('wm_history', old.id).catch(()=>{}))
-      return next
-    })
-  }
+  /**
+   * Agregar logo al historial.
+   * @param {File}   file    — archivo de imagen del logo
+   * @param {string} dataUrl — dataUrl ya generada (para no leer el File dos veces)
+   */
+  const addWm = useCallback(async (file, dataUrl) => {
+    // Actualización optimista
+    const optimistic = {
+      _id:     `local_${Date.now()}`,
+      name:    file.name,
+      date:    new Date().toISOString(),
+      dataUrl,
+    }
+    setRecent(prev => [optimistic, ...prev.filter(i => i.name !== file.name)].slice(0, 3))
+
+    // Persistir en servidor (sin bloquear la UI)
+    api.addWmHistory(file.name, dataUrl)
+      .then(data => {
+        if (data.ok) {
+          setRecent(prev => prev.map(i =>
+            i._id === optimistic._id ? { ...i, _id: data.id } : i
+          ))
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   return { recent, addWm }
 }

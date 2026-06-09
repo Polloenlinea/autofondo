@@ -1,18 +1,31 @@
-const express = require('express')
-const cors    = require('cors')
-const path    = require('path')
-const v1      = require('./api/v1/routes')
+const express    = require('express')
+const cors       = require('cors')
+const path       = require('path')
+const mongoose   = require('mongoose')
+const v1         = require('./api/v1/routes')
+const { warmup } = require('./services/bgRemoval')
 
-const app  = express()
-const PORT = process.env.PORT || 8001
+const app    = express()
+const PORT   = process.env.PORT || 8001
 const isProd = process.env.NODE_ENV === 'production'
 
+// ── MongoDB ───────────────────────────────────────────────────────────────────
+const MONGO_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/autofondo'
+
+mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
+  .then(() => {
+    const safeUri = MONGO_URI.replace(/\/\/[^@]+@/, '//<credenciales>@')
+    console.log(`✅ MongoDB conectado → ${safeUri}`)
+  })
+  .catch(err => {
+    console.error('❌ MongoDB no disponible:', err.message)
+    console.error('   Verificá que mongod está corriendo o revisá MONGODB_URI en .env')
+    // No matamos el proceso: las rutas Mongo devolverán 503 individualmente
+  })
+
 // ── Middleware ────────────────────────────────────────────────────────────────
-// En producción el frontend está en el mismo origen, no necesita CORS amplio
 app.use(cors({
-  origin: isProd
-    ? (process.env.ALLOWED_ORIGIN || true)
-    : '*'
+  origin: isProd ? (process.env.ALLOWED_ORIGIN || true) : '*'
 }))
 app.use(express.json({ limit: '1mb' }))
 
@@ -39,4 +52,8 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, '0.0.0.0', () => {
   const mode = isProd ? 'PRODUCTION' : 'development'
   console.log(`\n✅ AutoFondo [${mode}] → http://localhost:${PORT}/api/v1\n`)
+
+  // Pre-carga el modelo de IA en background para que el primer usuario
+  // no tenga que esperar la descarga (~100 MB, ~30 s en el primer arranque)
+  warmup().catch(() => {})
 })

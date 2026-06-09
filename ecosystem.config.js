@@ -14,12 +14,15 @@ module.exports = {
         NODE_ENV:        'production',
         PORT:            3001,         // Puerto interno (Nginx hace proxy a este)
         ALLOWED_ORIGIN:  'https://autofondo.artificialmente.com',
+        // ⚠️  Reemplazá esto con tu URI real (local o Atlas)
+        MONGODB_URI:     'mongodb://127.0.0.1:27017/autofondo',
       },
 
       // Variables de entorno desarrollo local
       env_development: {
-        NODE_ENV: 'development',
-        PORT:     8001,
+        NODE_ENV:    'development',
+        PORT:        8001,
+        MONGODB_URI: 'mongodb://127.0.0.1:27017/autofondo',
       },
 
       // Configuración del proceso
