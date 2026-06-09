@@ -23,13 +23,20 @@ export default function WatermarkPanel({ config, onChange }) {
   const handleLogoUpload = (e) => {
     const f = e.target.files[0]
     if (!f) return
-    const url = URL.createObjectURL(f)
-    const img = new Image()
-    img.onload = () => {
-      onChange({ ...config, logoFile: f, logoUrl: url, logoImg: img, enabled: true })
-      addWm(f, url)
+
+    // Leer como data URL para poder persistir en MongoDB
+    // (los blob: URLs son temporales y se invalidan al recargar la página)
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result
+      const img = new Image()
+      img.onload = () => {
+        onChange({ ...config, logoFile: f, logoUrl: dataUrl, logoImg: img, enabled: true })
+        addWm(f, dataUrl)
+      }
+      img.src = dataUrl
     }
-    img.src = url
+    reader.readAsDataURL(f)
   }
 
   const removeLogo = () => {
@@ -90,7 +97,7 @@ export default function WatermarkPanel({ config, onChange }) {
             <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Logos recientes</p>
             <div className="flex gap-2 flex-wrap">
               {recentWms.map(wm => (
-                <button key={wm.id}
+                <button key={wm._id}
                   onClick={() => {
                     const img = new Image()
                     img.onload = () => onChange({ ...config, logoFile: null, logoUrl: wm.dataUrl, logoImg: img, enabled: true })

@@ -20,7 +20,7 @@ export default function App() {
     removeImage, clearAll, setComposed, stats,
   } = useImages()
 
-  const { sessions, saveSession, deleteSession } = useSessions()
+  const { sessions, saveSession, deleteSession, loadSession } = useSessions()
 
   const reset = () => { clearAll(); setStep(0); setOutputSize('original') }
 
@@ -106,6 +106,7 @@ export default function App() {
         onClose={() => setShowSessions(false)}
         sessions={sessions}
         onDelete={deleteSession}
+        onLoadSession={loadSession}
       />
     </div>
   )

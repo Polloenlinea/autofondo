@@ -245,14 +245,18 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
                   <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Usados recientemente</p>
                   <div className="flex gap-2 overflow-x-auto pb-1">
                     {recentBgs.map(bg => (
-                      <button key={bg.id}
+                      <button key={bg._id}
                         onClick={() => {
-                          fetch(bg.dataUrl).then(r => r.blob()).then(blob => {
-                            const file = new File([blob], bg.name, { type: blob.type })
-                            setCustomFile(file)
-                            setCustomUrl(bg.dataUrl)
-                            setPreset(null)
-                          })
+                          // Convertir data URL a File directamente (sin fetch, compatible con todos los entornos)
+                          const [header, b64] = bg.dataUrl.split(',')
+                          const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg'
+                          const bytes = atob(b64)
+                          const arr   = new Uint8Array(bytes.length)
+                          for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+                          const file  = new File([arr], bg.name, { type: mime })
+                          setCustomFile(file)
+                          setCustomUrl(bg.dataUrl)
+                          setPreset(null)
                         }}
                         className={`relative flex-shrink-0 w-20 h-12 rounded-lg border-2 overflow-hidden transition-all
                           ${customFile?.name === bg.name && customUrl === bg.dataUrl
