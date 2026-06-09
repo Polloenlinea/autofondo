@@ -14,13 +14,11 @@ frontend/.vite/
 backend/.env
 frontend/.env
 
-# ── Modelos de IA (se descargan automáticamente en el primer uso) ─────────────
-# El directorio .cache en backend es generado por @imgly/background-removal-node
-# Se preserva en el servidor entre deploys pero no se sube a git (~100-200 MB)
+# ── Modelos de IA ─────────────────────────────────────────────────────────────
+# El modelo ONNX viene bundleado en node_modules (ya cubierto arriba).
+# Por las dudas, excluir directorios de caché legacy de versiones anteriores de @imgly.
 backend/.imgly/
-backend/.cache/
 **/.imgly-cache/
-**/.cache/ort/
 
 # ── Uploads temporales ────────────────────────────────────────────────────────
 backend/uploads/

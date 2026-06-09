@@ -297,45 +297,38 @@ Si necesitás cambiarlas, editá ese archivo y ejecutá `pm2 reload ecosystem.co
 
 ---
 
-## ⚠️ Modelo de IA — Caché y primer arranque
+## ⚠️ Modelo de IA — Cómo funciona en producción
 
-AutoFondo usa `@imgly/background-removal-node` para eliminar fondos de imágenes. Este paquete descarga y cachea archivos del modelo ONNX (~100 MB) **la primera vez que se inicia el servidor**.
+AutoFondo usa `@imgly/background-removal-node` para quitar fondos. El modelo ONNX (~126 MB de archivos) **viene bundleado dentro de `node_modules`** — se instala con `npm install` y **no requiere descarga adicional en runtime ni acceso a internet**.
 
-### Lo que ocurre al iniciar:
+### Lo que ocurre al arrancar el servidor:
 
 ```
-[server start]  → el proceso llama warmup() automáticamente en background
-⏳ Cargando modelo de IA...
-   (descarga ~100 MB si es la primera vez, ~10-30 seg)
-✅ Modelo listo
+[pm2 start]  →  Node.js inicia
+               warmup() se llama en background (no bloquea el servidor)
+
+⏳ Cargando modelo de IA en memoria (puede tardar ~10-30 s)...
+   (lee ~126 MB de node_modules hacia RAM y crea la sesión ONNX)
+✅ Modelo IA listo — primera imagen será inmediata
 ```
 
-A partir de ese momento el modelo queda en memoria. **No reiniciar el proceso** si parece lento en el primer arranque.
+Si el servidor está listo (responde `/api/v1/health`) pero el warmup todavía está corriendo, **la primera imagen procesada puede tardar ~10-30 segundos**. Esto es completamente normal y solo ocurre una vez por arranque.
 
-### Caché del modelo (persistencia entre deploys)
+**No reiniciar el proceso** durante el warmup — `pm2 logs autofondo` muestra el progreso.
 
-El modelo se guarda en `backend/.cache/` (directorio creado automáticamente por @imgly).  
-Este directorio **ya está en `.gitignore`** — no se sube a GitHub, pero se preserva en el servidor entre deploys porque `git pull` no lo toca.
+### El modelo no se pierde entre deploys
 
-```bash
-# Ver tamaño del caché (referencia: ~100-200 MB)
-du -sh /var/www/autofondo/backend/.cache/ 2>/dev/null || echo "Caché no creado aún"
-```
-
-Si necesitás forzar una re-descarga (ej. después de actualizar la versión del modelo):
-```bash
-rm -rf /var/www/autofondo/backend/.cache/
-pm2 restart autofondo
-# El modelo se descarga de nuevo en el próximo warmup (~10-30 seg)
-```
+Los archivos del modelo están en `backend/node_modules/@imgly/background-removal-node/dist/`.  
+`npm install --omit=dev` (que ejecuta `deploy.sh`) los reinstala automáticamente si hace falta.  
+No hay directorio de caché externo que mantener.
 
 ### RAM requerida
 
 | Momento | RAM del proceso |
 |---|---|
-| Servidor idle | ~150 MB |
-| Modelo cargando (warmup) | ~800 MB pico |
-| Modelo en memoria (steady state) | ~500-600 MB |
+| Servidor idle (sin modelo) | ~100 MB |
+| Durante warmup (cargando modelo) | ~800 MB pico |
+| Steady state (modelo en RAM) | ~500 MB |
 | Durante procesamiento de imagen | ~800 MB pico |
 
 Por eso el requisito mínimo es **2 GB de RAM** en el servidor.
@@ -362,19 +355,22 @@ pm2 status
 curl http://localhost:3001/api/v1/health
 ```
 
-**La app abre pero las imágenes no se procesan:**
+**La app abre pero las imágenes no se procesan (timeout o demora en la primera):**
 ```bash
-# Ver logs del proceso en tiempo real
+# Ver logs en tiempo real
 pm2 logs autofondo
-# Probablemente el modelo de IA está cargando (esperar 30-60 seg)
+# Normal: si ves "⏳ Cargando modelo de IA..." esperar ~30 seg a que aparezca "✅ Modelo IA listo"
+# Si el warmup falló, la primera imagen del usuario lo inicializa (puede tardar ~30 seg)
 ```
 
-**Disco lleno:**
-El modelo de IA crea una carpeta caché en `backend/.cache/`. Podés limpiarla si es necesario — se regenera automáticamente al reiniciar el servidor.
-
+**Disco lleno — el modelo ocupa ~176 MB en node_modules:**
+El modelo está bundleado en `backend/node_modules/@imgly/background-removal-node/`.  
+No se puede borrar sin romper la app. Si hay problemas de espacio, verificar que no haya versiones viejas de node_modules:
 ```bash
-rm -rf backend/.cache/
-pm2 restart autofondo
+du -sh /var/www/autofondo/backend/node_modules/
+# Si hace falta limpiar y reinstalar limpio:
+rm -rf /var/www/autofondo/backend/node_modules/
+cd /var/www/autofondo && bash deploy.sh
 ```
 
 **MongoDB no conecta:**
