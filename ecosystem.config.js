@@ -16,6 +16,8 @@ module.exports = {
         ALLOWED_ORIGIN:  'https://autofondo.artificialmente.com',
         // ⚠️  Reemplazá esto con tu URI real (local o Atlas)
         MONGODB_URI:     'mongodb://127.0.0.1:27017/autofondo',
+        // Modelo IA: 'small' (rápido), 'medium' (balance), 'large' (lento/mejor calidad)
+        IMGLY_MODEL:     'medium',
       },
 
       // Variables de entorno desarrollo local
@@ -23,6 +25,7 @@ module.exports = {
         NODE_ENV:    'development',
         PORT:        8001,
         MONGODB_URI: 'mongodb://127.0.0.1:27017/autofondo',
+        IMGLY_MODEL: 'small',
       },
 
       // Configuración del proceso

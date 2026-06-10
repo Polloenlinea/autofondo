@@ -116,3 +116,13 @@ export async function addWmHistory(name, dataUrl) {
   })
   return res.json()
 }
+
+export async function deleteBgHistory(id) {
+  const res = await apiFetch(`${BASE}/bg-history/${id}`, { method: 'DELETE' })
+  return res.json()
+}
+
+export async function deleteWmHistory(id) {
+  const res = await apiFetch(`${BASE}/wm-history/${id}`, { method: 'DELETE' })
+  return res.json()
+}

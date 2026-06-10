@@ -315,4 +315,26 @@ router.post('/wm-history', jsonLarge, async (req, res) => {
   }
 })
 
+// DELETE /bg-history/:id
+router.delete('/bg-history/:id', async (req, res) => {
+  if (!requireMongo(res)) return
+  try {
+    await BgHistory.deleteOne({ _id: req.params.id, clientId: cid(req) })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message })
+  }
+})
+
+// DELETE /wm-history/:id
+router.delete('/wm-history/:id', async (req, res) => {
+  if (!requireMongo(res)) return
+  try {
+    await WmHistory.deleteOne({ _id: req.params.id, clientId: cid(req) })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message })
+  }
+})
+
 module.exports = router

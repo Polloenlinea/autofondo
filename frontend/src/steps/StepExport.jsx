@@ -168,7 +168,14 @@ export default function StepExport({ images, effectiveType, outputSize, onBack, 
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 px-4 py-3 pb-safe">
         <div className="max-w-2xl mx-auto space-y-2">
 
-          {/* Descarga masiva */}
+          {/* Toast guardado */}
+          {savedMsg && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700 font-medium">
+              <Check size={13} /> Lote guardado en el historial
+            </div>
+          )}
+
+          {/* Descarga masiva — CTA principal */}
           <Btn variant="primary" size="full" onClick={downloadAll}
             disabled={downloading || !processedImages.length}>
             {downloading
@@ -176,42 +183,40 @@ export default function StepExport({ images, effectiveType, outputSize, onBack, 
               : <><Archive size={14} /> Descargar todo ({processedImages.length}){wm.enabled ? ' + logo' : ''}</>}
           </Btn>
 
-          {/* Publicar todo (disabled) */}
+          {/* Fila secundaria: guardar lote + sistemas futuros */}
           <div className="flex gap-2">
+            <Btn variant="secondary" onClick={() => setShowSaveModal(true)}>
+              <Save size={14} /> Guardar lote
+            </Btn>
             {SYSTEMS.map(sys => (
               <button key={sys.id} disabled
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl
                   border border-slate-200 bg-slate-50 cursor-not-allowed">
-                <sys.icon size={13} className={`${sys.color} opacity-50`} />
-                <span className="text-xs font-medium text-slate-400">{sys.label}</span>
-                <Lock size={10} className="text-slate-300" />
+                <sys.icon size={12} className={`${sys.color} opacity-50`} />
+                <span className="text-xs font-medium text-slate-400 hidden sm:inline">{sys.label}</span>
+                <Lock size={9} className="text-slate-300" />
               </button>
             ))}
           </div>
 
-          <div className="flex gap-2 flex-wrap">
-            {savedMsg && (
-              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700 font-medium">
-                <Check size={13} /> Sesión guardada en el historial
-              </div>
-            )}
-            <Btn variant="secondary" onClick={() => setShowSaveModal(true)}>
-              <Save size={14} /> Guardar sesión
+          {/* Fila navegación */}
+          <div className="flex items-center gap-2">
+            <Btn variant="secondary" onClick={onBack}>
+              ← Volver a Fondos
             </Btn>
-            <Btn variant="secondary" onClick={onBack}>Atrás</Btn>
             <Btn variant="ghost" size="full" onClick={onReset}>
-              <RotateCcw size={13} /> Nueva sesión
+              <RotateCcw size={13} /> Nuevo lote
             </Btn>
           </div>
         </div>
       </div>
 
-      {/* ── Save session modal ── */}
+      {/* ── Modal guardar lote ── */}
       {showSaveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
           onClick={() => setShowSaveModal(false)}>
           <div className="bg-white rounded-xl p-5 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-semibold text-slate-800 mb-3">Guardar sesión</h3>
+            <h3 className="text-base font-semibold text-slate-800 mb-3">Guardar lote</h3>
             <input
               type="text"
               placeholder={`Sesión ${new Date().toLocaleDateString('es-AR')}`}

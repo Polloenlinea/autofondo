@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { ImagePlus, X, RefreshCw, Check, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react'
+import { ImagePlus, X, RefreshCw, Check, ChevronDown, ChevronUp, AlertCircle, Trash2 } from 'lucide-react'
 import { Btn, Slider, Toggle, Card, SectionLabel, Spinner } from '../components/ui'
 import { composeImage } from '../services/api'
 import { useBgHistory } from '../hooks/useBgHistory'
@@ -39,7 +39,7 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
   const stopRef    = useRef(false)
   const applyToken = useRef(0)
 
-  const { recent: recentBgs, addBg } = useBgHistory()
+  const { recent: recentBgs, addBg, deleteBg } = useBgHistory()
 
   const exteriorDone  = images.filter(i => effectiveType(i) === 'exterior' && i.status === 'done')
   const composedCount = images.filter(i => i.composedB64).length
@@ -245,28 +245,36 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
                   <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Usados recientemente</p>
                   <div className="flex gap-2 overflow-x-auto pb-1">
                     {recentBgs.map(bg => (
-                      <button key={bg._id}
-                        onClick={() => {
-                          // Convertir data URL a File directamente (sin fetch, compatible con todos los entornos)
-                          const [header, b64] = bg.dataUrl.split(',')
-                          const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg'
-                          const bytes = atob(b64)
-                          const arr   = new Uint8Array(bytes.length)
-                          for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
-                          const file  = new File([arr], bg.name, { type: mime })
-                          setCustomFile(file)
-                          setCustomUrl(bg.dataUrl)
-                          setPreset(null)
-                        }}
-                        className={`relative flex-shrink-0 w-20 h-12 rounded-lg border-2 overflow-hidden transition-all
-                          ${customFile?.name === bg.name && customUrl === bg.dataUrl
-                            ? 'border-blue-600 ring-2 ring-blue-100'
-                            : 'border-slate-200 hover:border-blue-300'}`}>
-                        <img src={bg.dataUrl} className="w-full h-full object-cover" alt="" />
-                        <div className="absolute inset-x-0 bottom-0 bg-black/40 px-1 py-0.5">
-                          <p className="text-[9px] text-white truncate">{bg.name}</p>
-                        </div>
-                      </button>
+                      <div key={bg._id} className="relative flex-shrink-0 group">
+                        <button
+                          onClick={() => {
+                            const [header, b64] = bg.dataUrl.split(',')
+                            const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg'
+                            const bytes = atob(b64)
+                            const arr   = new Uint8Array(bytes.length)
+                            for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+                            const file  = new File([arr], bg.name, { type: mime })
+                            setCustomFile(file)
+                            setCustomUrl(bg.dataUrl)
+                            setPreset(null)
+                          }}
+                          className={`w-20 h-12 rounded-lg border-2 overflow-hidden transition-all block
+                            ${customFile?.name === bg.name && customUrl === bg.dataUrl
+                              ? 'border-blue-600 ring-2 ring-blue-100'
+                              : 'border-slate-200 hover:border-blue-300'}`}>
+                          <img src={bg.dataUrl} className="w-full h-full object-cover" alt="" />
+                          <div className="absolute inset-x-0 bottom-0 bg-black/40 px-1 py-0.5">
+                            <p className="text-[9px] text-white truncate">{bg.name}</p>
+                          </div>
+                        </button>
+                        {/* Botón eliminar */}
+                        <button
+                          onClick={e => { e.stopPropagation(); deleteBg(bg._id) }}
+                          className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full
+                            flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                          <X size={8} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>

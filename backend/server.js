@@ -27,7 +27,9 @@ mongoose.connect(MONGO_URI, { serverSelectionTimeoutMS: 5000 })
 app.use(cors({
   origin: isProd ? (process.env.ALLOWED_ORIGIN || true) : '*'
 }))
-app.use(express.json({ limit: '1mb' }))
+// NOTA: NO usar express.json() global — las rutas que reciben JSON grande
+// (sessions, bg-history, wm-history) usan su propio parser con limit:'80mb'.
+// Las rutas de imagen usan multer. Ninguna ruta necesita el parser global.
 
 // ── Rutas API versionadas ─────────────────────────────────────────────────────
 app.use('/api/v1', v1)
