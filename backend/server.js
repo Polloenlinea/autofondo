@@ -55,7 +55,8 @@ app.listen(PORT, '0.0.0.0', () => {
   const mode = isProd ? 'PRODUCTION' : 'development'
   console.log(`\n✅ AutoFondo [${mode}] → http://localhost:${PORT}/api/v1\n`)
 
-  // Pre-carga el modelo de IA en background para que el primer usuario
-  // no tenga que esperar la descarga (~100 MB, ~30 s en el primer arranque)
-  warmup().catch(() => {})
+  // Warmup deshabilitado en Cloud Run: el proceso ONNX crashea al inicializar
+  // en el entorno de contenedor. El modelo se inicializa en el primer uso.
+  // (La primera imagen tardará ~30s, las siguientes son inmediatas)
+  // warmup().catch(() => {})
 })

@@ -28,11 +28,15 @@ async function removeBg(buffer) {
   const blob   = new Blob([buffer], { type: 'image/png' })
   const result = await removeBackground(blob, {
     model:  MODEL,
-    output: { format: 'image/png', quality: 0.92 },
+    output: { format: 'image/png', quality: 1.0 },
   })
   const raw = Buffer.from(await result.arrayBuffer())
+
+  // Recortar bordes transparentes para que los sliders de Posición X/Y funcionen.
+  // Con threshold: 0 nos aseguramos de que SOLO corte lo que es 100% transparente,
+  // evitando el efecto "guillotina" en sombras muy oscuras.
   try {
-    return await sharp(raw).trim({ threshold: 10 }).png().toBuffer()
+    return await sharp(raw).trim({ threshold: 0 }).png().toBuffer()
   } catch {
     return raw
   }

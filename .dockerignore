@@ -1,0 +1,15 @@
+.git
+node_modules
+frontend/node_modules
+backend/node_modules
+frontend/dist
+logs
+*.log
+.env
+.env.*
+ecosystem.config.js
+deploy.sh
+iniciar.bat
+instalar.bat
+README.md
+DEPLOY.md
