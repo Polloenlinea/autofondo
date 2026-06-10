@@ -23,6 +23,8 @@ export default function StepExport({ images, effectiveType, outputSize, onBack, 
   const [showSaveModal, setShowSaveModal] = useState(false)
   const [sessionName,   setSessionName]   = useState('')
   const [savedMsg,      setSavedMsg]      = useState(false)
+  const [saveError,     setSaveError]     = useState(null)
+  const [saving,        setSaving]        = useState(false)
 
   const processedImages = images.filter(img =>
     effectiveType(img) !== 'interior' && (img.composedB64 || img.cutoutB64)
@@ -75,13 +77,21 @@ export default function StepExport({ images, effectiveType, outputSize, onBack, 
   }
 
   const handleSaveSession = async () => {
-    if (saveSession) {
-      await saveSession(sessionName, images)
+    setSaveError(null)
+    setSaving(true)
+    try {
+      if (saveSession) {
+        await saveSession(sessionName, images)
+      }
+      setShowSaveModal(false)
+      setSessionName('')
+      setSavedMsg(true)
+      setTimeout(() => setSavedMsg(false), 4000)
+    } catch (err) {
+      setSaveError(err.message || 'Error al guardar — revisá la conexión')
+    } finally {
+      setSaving(false)
     }
-    setShowSaveModal(false)
-    setSessionName('')
-    setSavedMsg(true)
-    setTimeout(() => setSavedMsg(false), 3000)
   }
 
   return (
@@ -214,21 +224,29 @@ export default function StepExport({ images, effectiveType, outputSize, onBack, 
       {/* ── Modal guardar lote ── */}
       {showSaveModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-          onClick={() => setShowSaveModal(false)}>
+          onClick={() => { if (!saving) setShowSaveModal(false) }}>
           <div className="bg-white rounded-xl p-5 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
             <h3 className="text-base font-semibold text-slate-800 mb-3">Guardar lote</h3>
             <input
               type="text"
-              placeholder={`Sesión ${new Date().toLocaleDateString('es-AR')}`}
+              placeholder={`Lote ${new Date().toLocaleDateString('es-AR')}`}
               value={sessionName}
-              onChange={e => setSessionName(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSaveSession()}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+              onChange={e => { setSessionName(e.target.value); setSaveError(null) }}
+              onKeyDown={e => e.key === 'Enter' && !saving && handleSaveSession()}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
               autoFocus
+              disabled={saving}
             />
+            {saveError && (
+              <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                ⚠️ {saveError}
+              </div>
+            )}
             <div className="flex gap-2">
-              <Btn variant="secondary" onClick={() => setShowSaveModal(false)}>Cancelar</Btn>
-              <Btn variant="primary" size="full" onClick={handleSaveSession}>Guardar</Btn>
+              <Btn variant="secondary" onClick={() => setShowSaveModal(false)} disabled={saving}>Cancelar</Btn>
+              <Btn variant="primary" size="full" onClick={handleSaveSession} disabled={saving}>
+                {saving ? <><Spinner size="sm" /> Guardando…</> : 'Guardar'}
+              </Btn>
             </div>
           </div>
         </div>
