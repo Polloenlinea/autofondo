@@ -26,6 +26,10 @@ async function warmup() {
 // modelOverride permite usar 'large' para reprocesado de alta calidad individual
 async function removeBg(buffer, modelOverride = null) {
   const sharp  = require('sharp')
+
+  // Dimensiones originales para reconstruir el canvas
+  const { width: origW, height: origH } = await sharp(buffer).metadata()
+
   const blob   = new Blob([buffer], { type: 'image/png' })
   const result = await removeBackground(blob, {
     model:  modelOverride || MODEL,
@@ -33,11 +37,22 @@ async function removeBg(buffer, modelOverride = null) {
   })
   const raw = Buffer.from(await result.arrayBuffer())
 
-  // Recortar bordes transparentes para que los sliders de Posición X/Y funcionen.
-  // Con threshold: 0 nos aseguramos de que SOLO corte lo que es 100% transparente,
-  // evitando el efecto "guillotina" en sombras muy oscuras.
   try {
-    return await sharp(raw).trim({ threshold: 10 }).png().toBuffer()
+    // Recortar para obtener el bounding box real del auto
+    const trimmed = await sharp(raw).trim({ threshold: 10 }).png().toBuffer()
+    const { width: carW, height: carH } = await sharp(trimmed).metadata()
+
+    // Centrar el auto en el canvas original → preserva la composición si el auto
+    // estaba centrado, y centra los que estaban descentrados
+    const left = Math.max(0, Math.round((origW - carW) / 2))
+    const top  = Math.max(0, Math.round((origH - carH) / 2))
+
+    return await sharp({
+      create: { width: origW, height: origH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
+    })
+      .composite([{ input: trimmed, left, top }])
+      .png()
+      .toBuffer()
   } catch {
     return raw
   }
