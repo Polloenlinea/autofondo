@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
-import { Eraser, Paintbrush, RotateCcw, Check, ZoomIn, ZoomOut, Hand, Scissors, Undo2, Pencil } from 'lucide-react'
+import { Eraser, Paintbrush, RotateCcw, Check, ZoomIn, ZoomOut, Hand, Scissors, Undo2, Pencil, Pipette } from 'lucide-react'
 import { Btn } from './ui'
 
 const MAX_UNDO = 20
@@ -26,6 +26,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
   // Herramienta: cómo se aplica
   const [penTool, setPenTool] = useState('brush')   // 'brush' | 'lasso' | 'pan'
   const [paintColor, setPaintColor] = useState('#000000')
+  const [eyeDropping, setEyeDropping] = useState(false) // modo gotero temporal
 
   // tool derivado para compatibilidad con la lógica de dibujo/eventos
   const tool = penTool === 'brush' ? penMode : penTool
@@ -235,9 +236,27 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
   }, [lassoPoints, lassoClosed, zoom, pan])
 
   // ── Eventos de puntero ─────────────────────────────────────────────────────
+  // Convertir [r,g,b] a hex
+  const rgbToHex = (r, g, b) =>
+    '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+
   const onPointerDown = useCallback((e) => {
     if (e.button !== 0 && e.pointerType !== 'touch') return
     e.preventDefault()
+
+    // Gotero: tomar color del pixel bajo el cursor (desde foto original si disponible)
+    if (eyeDropping) {
+      const pos = screenToCanvas(e.clientX, e.clientY)
+      const x = Math.round(pos.x), y = Math.round(pos.y)
+      const source = origPhotoRef.current || canvasRef.current
+      const ctx = source.getContext('2d')
+      const px = ctx.getImageData(x, y, 1, 1).data
+      if (px[3] > 0) {
+        setPaintColor(rgbToHex(px[0], px[1], px[2]))
+      }
+      setEyeDropping(false)
+      return
+    }
 
     if (tool === 'pan' || e.button === 1) {
       isPanning.current = true
@@ -267,7 +286,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
     const pos = screenToCanvas(e.clientX, e.clientY)
     lastPos.current = pos
     paintAt(pos.x, pos.y)
-  }, [tool, pan, lassoClosed, lassoPoints, checkLassoClose, screenToCanvas, paintAt, saveSnapshot])
+  }, [eyeDropping, tool, pan, lassoClosed, lassoPoints, checkLassoClose, screenToCanvas, paintAt, saveSnapshot])
 
   const onPointerMove = useCallback((e) => {
     e.preventDefault()
@@ -339,11 +358,13 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
 
   const handleSave = () => onSave(canvasRef.current.toDataURL('image/png').split(',')[1])
 
-  const containerCursor = tool === 'pan'
-    ? (isPanning.current ? 'grabbing' : 'grab')
-    : tool === 'lasso'
-      ? (lassoNearClose ? 'cell' : 'crosshair')
-      : 'none'
+  const containerCursor = eyeDropping
+    ? 'crosshair'
+    : tool === 'pan'
+      ? (isPanning.current ? 'grabbing' : 'grab')
+      : tool === 'lasso'
+        ? (lassoNearClose ? 'cell' : 'crosshair')
+        : 'none'
 
   return (
     <div className="flex flex-col h-full" style={{ userSelect: 'none' }}>
@@ -397,6 +418,19 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
               </div>
             </label>
+            {/* Gotero */}
+            <div className="flex flex-col">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5 mb-0.5">Gotero</span>
+              <button
+                onClick={() => setEyeDropping(v => !v)}
+                title="Hacer clic en el auto para tomar su color"
+                className={`w-9 h-9 flex items-center justify-center rounded-lg border-2 transition-all
+                  ${eyeDropping
+                    ? 'border-emerald-500 bg-emerald-50 text-emerald-700 scale-105'
+                    : 'border-slate-200 text-slate-500 hover:border-slate-400 hover:bg-slate-50'}`}>
+                <Pipette size={15} />
+              </button>
+            </div>
             {/* Colores rápidos */}
             <div className="flex flex-col">
               <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5 mb-0.5">Rápidos</span>
@@ -506,11 +540,12 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
       )}
 
       {/* ── Hint ── */}
-      <div className="px-3 py-1.5 bg-amber-50 border-b border-amber-100 flex-shrink-0">
-        <p className="text-[11px] text-amber-700 leading-snug">
-          {tool === 'erase'   && <>Pintá con el pincel para <strong>eliminar</strong> partes del fondo que quedaron · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
-          {tool === 'restore' && <>Pintá para <strong>recuperar</strong> partes del auto que la IA borró de más — toma los píxeles de la foto original · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
-          {tool === 'paint'   && <>Pintá con color sólido para <strong>tapar</strong> logos, detalles o imperfecciones · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
+      <div className={`px-3 py-1.5 border-b flex-shrink-0 ${eyeDropping ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
+        <p className={`text-[11px] leading-snug ${eyeDropping ? 'text-emerald-700' : 'text-amber-700'}`}>
+          {eyeDropping && <><strong>Gotero activo</strong> — hacé clic sobre cualquier parte del auto para tomar ese color. Se cancela solo después de seleccionar.</>}
+          {!eyeDropping && tool === 'erase'   && <>Pintá con el pincel para <strong>eliminar</strong> partes del fondo que quedaron · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
+          {!eyeDropping && tool === 'restore' && <>Pintá para <strong>recuperar</strong> partes del auto que la IA borró de más — toma los píxeles de la foto original · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
+          {!eyeDropping && tool === 'paint'   && <>Pintá con color sólido para <strong>tapar</strong> logos, detalles o imperfecciones · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
           {tool === 'pan'     && 'Arrastrá para mover · Scroll para zoom'}
           {tool === 'lasso'   && !lassoClosed && (
             lassoPoints.length === 0

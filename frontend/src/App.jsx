@@ -17,7 +17,7 @@ export default function App() {
 
   const {
     images, rejected, addFiles, toggleType, effectiveType,
-    processAll, reprocess, applyAdjustments,
+    processAll, reprocess, applyAdjustments, applyBlobSelection,
     removeImage, clearAll, setComposed, stats,
   } = useImages()
 
@@ -79,6 +79,7 @@ export default function App() {
             images={images} effectiveType={effectiveType}
             toggleType={toggleType} processAll={processAll}
             reprocess={reprocess} applyAdjustments={applyAdjustments}
+            applyBlobSelection={applyBlobSelection}
             removeImage={removeImage}
             stats={stats}
             plateOptions={plateOptions}

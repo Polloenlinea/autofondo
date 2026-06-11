@@ -1,7 +1,8 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
-import { X, RotateCcw, AlertCircle, Settings2, ChevronDown, ChevronUp, Sun, Contrast } from 'lucide-react'
+import { X, RotateCcw, AlertCircle, Settings2, ChevronDown, ChevronUp, Sun, Contrast, Car } from 'lucide-react'
 import ImageCard from '../components/ImageCard'
 import EditModal from '../components/EditModal'
+import CarSelector from '../components/CarSelector'
 import { Btn, Slider, Spinner, Card } from '../components/ui'
 
 const OUTPUT_SIZES = [
@@ -13,13 +14,14 @@ const OUTPUT_SIZES = [
 
 export default function StepReview({
   images, effectiveType, toggleType,
-  processAll, reprocess, applyAdjustments, removeImage,
+  processAll, reprocess, applyAdjustments, applyBlobSelection, removeImage,
   stats, plateOptions, onNext, onBack
 }) {
   const stopRef  = useRef(false)
   const ranRef   = useRef(false)
 
   const [editImg,       setEditImg]       = useState(null)
+  const [blobImg,       setBlobImg]       = useState(null) // imagen con múltiples autos
   const [outputSize,    setOutputSize]    = useState('original')
   const [showBatch,     setShowBatch]     = useState(false)
 
@@ -232,20 +234,55 @@ export default function StepReview({
         </div>
       )}
 
+      {/* ── Aviso múltiples autos ── */}
+      {images.some(i => i.blobs?.length > 0) && (
+        <div className="flex gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+          <Car size={15} className="text-blue-600 mt-0.5 flex-shrink-0" strokeWidth={2} />
+          <p className="text-xs text-blue-700 leading-relaxed">
+            Se detectaron <strong>múltiples autos</strong> en algunas imágenes.
+            Tocá el botón <strong>"Seleccionar auto"</strong> en la imagen para elegir cuál conservar.
+          </p>
+        </div>
+      )}
+
       {/* ── Grid ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {images.map(img => (
-          <ImageCard
-            key={img.id}
-            img={img}
-            effectiveType={effectiveType}
-            onToggleType={() => toggleType(img.id)}
-            onZoom={() => setEditImg(img)}
-            onRemove={() => removeImage(img.id)}
-            showResult
-          />
+          <div key={img.id} className="relative">
+            <ImageCard
+              img={img}
+              effectiveType={effectiveType}
+              onToggleType={() => toggleType(img.id)}
+              onZoom={() => setEditImg(img)}
+              onRemove={() => removeImage(img.id)}
+              showResult
+            />
+            {/* Badge múltiples autos */}
+            {img.blobs?.length > 0 && img.status === 'done' && (
+              <button
+                onClick={() => setBlobImg(img)}
+                className="absolute bottom-2 left-2 right-2 flex items-center justify-center gap-1
+                  bg-blue-700 hover:bg-blue-800 text-white text-[10px] font-bold
+                  px-2 py-1.5 rounded-md shadow-lg transition-colors z-10">
+                <Car size={10} /> {img.blobs.length + 1} autos — seleccionar
+              </button>
+            )}
+          </div>
         ))}
       </div>
+
+      {/* ── Modal selección de auto ── */}
+      {blobImg && (
+        <CarSelector
+          cutoutB64={blobImg.cutoutB64}
+          blobs={blobImg.blobs}
+          onSelect={(newB64) => {
+            applyBlobSelection(blobImg.id, newB64)
+            setBlobImg(null)
+          }}
+          onCancel={() => setBlobImg(null)}
+        />
+      )}
 
       {/* ── Modal de edición individual ── */}
       {editImg && (

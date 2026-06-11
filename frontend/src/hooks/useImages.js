@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { detectType, removeBg, adjustImage } from '../services/api'
+import { detectBlobs } from '../utils/blobDetect'
 
 export const DEFAULT_ADJUSTMENTS = { brightness: 1, contrast: 1, rotation: 0 }
 
@@ -113,7 +114,9 @@ export function useImages() {
       try {
         const res = await removeBg(img.file, plateOptions)
         if (!res.ok) throw new Error(res.error || 'Error del servidor')
-        update(img.id, { status: 'done', cutoutB64: res.image, plateApplied: needsPlate })
+        // Detectar múltiples autos en paralelo (no bloquea el flujo)
+        const blobs = await detectBlobs(res.image)
+        update(img.id, { status: 'done', cutoutB64: res.image, plateApplied: needsPlate, blobs })
       } catch (e) {
         update(img.id, { status: 'error', error: e.message })
       }
@@ -164,11 +167,17 @@ export function useImages() {
     try {
       const res = await removeBg(img.file, options)
       if (!res.ok) throw new Error(res.error || 'Error del servidor')
-      update(id, { status: 'done', cutoutB64: res.image })
+      const blobs = await detectBlobs(res.image)
+      update(id, { status: 'done', cutoutB64: res.image, blobs })
     } catch (e) {
       update(id, { status: 'error', error: e.message })
     }
   }, [images, update])
+
+  // Aplicar selección de blob: reemplaza cutoutB64 y limpia blobs
+  const applyBlobSelection = useCallback((id, newB64) => {
+    update(id, { cutoutB64: newB64, blobs: [], composedB64: null })
+  }, [update])
 
   const removeImage = useCallback((id) =>
     setImages(prev => prev.filter(img => img.id !== id))
@@ -180,7 +189,7 @@ export function useImages() {
 
   return {
     images, rejected, addFiles, toggleType, effectiveType,
-    processAll, reprocess, applyAdjustments,
+    processAll, reprocess, applyAdjustments, applyBlobSelection,
     removeImage, clearAll, setComposed,
     stats: {
       total:      images.length,
