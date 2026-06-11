@@ -84,7 +84,7 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
           className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
           <div className="flex items-center gap-2.5">
             <ShieldCheck size={15} className={plateOptions.hidePlate ? 'text-blue-700' : 'text-slate-400'} />
-            <span className="text-sm font-semibold text-slate-700">Opciones de privacidad</span>
+            <span className="text-sm font-semibold text-slate-700">Opciones de matrícula</span>
             {plateOptions.hidePlate && (
               <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
                 Activo

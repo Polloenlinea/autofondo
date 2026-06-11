@@ -35,7 +35,17 @@ async function removeBg(buffer, modelOverride = null) {
     model:  modelOverride || MODEL,
     output: { format: 'image/png', quality: 1.0 },
   })
-  const raw = Buffer.from(await result.arrayBuffer())
+  const rawResult = Buffer.from(await result.arrayBuffer())
+
+  // Corregir píxeles semi-transparentes en la carrocería: el modelo a veces
+  // deja alpha ~150-240 en paneles metálicos. Forzar a opaco si alpha > 180.
+  const { data: px, info: pxInfo } = await sharp(rawResult)
+    .ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  for (let i = 3; i < px.length; i += 4) {
+    if (px[i] > 180) px[i] = 255
+  }
+  const raw = await sharp(px, { raw: { width: pxInfo.width, height: pxInfo.height, channels: 4 } })
+    .png().toBuffer()
 
   try {
     // Recortar para obtener el bounding box real del auto

@@ -4,26 +4,31 @@ import { Btn } from './ui'
 
 const MAX_UNDO = 20
 
-export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
+export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel }) {
   const canvasRef    = useRef(null)
-  const origRef      = useRef(null)
+  const origCutRef   = useRef(null)  // copia del cutout (para Reset)
+  const origPhotoRef = useRef(null)  // foto original (para Restaurar)
   const containerRef = useRef(null)
   const cursorRef    = useRef(null)
 
-  // Undo stack: array de ImageData
   const undoStack    = useRef([])
   const [canUndo, setCanUndo] = useState(false)
 
-  // Estado de dibujo
   const isPointerDown = useRef(false)
   const lastPos       = useRef(null)
-  const activePtId    = useRef(null)   // pointerId capturado
+  const activePtId    = useRef(null)
 
-  // Estado de pan
   const isPanning   = useRef(false)
   const panOrigin   = useRef(null)
 
-  const [tool,      setTool]      = useState('erase')
+  // Modo: qué hace el pincel/lazo
+  const [penMode, setPenMode] = useState('erase')   // 'erase' | 'restore'
+  // Herramienta: cómo se aplica
+  const [penTool, setPenTool] = useState('brush')   // 'brush' | 'lasso' | 'pan'
+
+  // tool derivado para compatibilidad con la lógica de dibujo/eventos
+  const tool = penTool === 'brush' ? penMode : penTool
+
   const [brushSize, setBrushSize] = useState(24)
   const [zoom,      setZoom]      = useState(1)
   const [pan,       setPan]       = useState({ x: 0, y: 0 })
@@ -31,13 +36,11 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
   const [canvasW,   setCanvasW]   = useState(0)
   const [canvasH,   setCanvasH]   = useState(0)
 
-  // Lazo
-  const [lassoPoints, setLassoPoints] = useState([])
-  const [lassoClosed, setLassoClosed] = useState(false)
-  // Para detectar si el puntero está cerca del primer punto del lazo
+  const [lassoPoints,    setLassoPoints]    = useState([])
+  const [lassoClosed,    setLassoClosed]    = useState(false)
   const [lassoNearClose, setLassoNearClose] = useState(false)
 
-  // ── Cargar imagen ──────────────────────────────────────────────────────────
+  // ── Cargar cutout ──────────────────────────────────────────────────────────
   useEffect(() => {
     const img = new Image()
     img.onload = () => {
@@ -46,11 +49,11 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
       main.height = img.height
       main.getContext('2d').drawImage(img, 0, 0)
 
-      const off = document.createElement('canvas')
-      off.width  = img.width
-      off.height = img.height
-      off.getContext('2d').drawImage(img, 0, 0)
-      origRef.current = off
+      const offCut = document.createElement('canvas')
+      offCut.width  = img.width
+      offCut.height = img.height
+      offCut.getContext('2d').drawImage(img, 0, 0)
+      origCutRef.current = offCut
 
       setCanvasW(img.width)
       setCanvasH(img.height)
@@ -69,6 +72,21 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
     img.src = `data:image/png;base64,${cutoutB64}`
   }, [cutoutB64])
 
+  // Cargar foto original para restaurar desde ella (no desde el cutout)
+  useEffect(() => {
+    if (!originalUrl) return
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      const off = document.createElement('canvas')
+      off.width  = img.width
+      off.height = img.height
+      off.getContext('2d').drawImage(img, 0, 0)
+      origPhotoRef.current = off
+    }
+    img.src = originalUrl
+  }, [originalUrl])
+
   // ── Undo stack ─────────────────────────────────────────────────────────────
   const saveSnapshot = useCallback(() => {
     const canvas = canvasRef.current
@@ -86,7 +104,6 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
     setCanUndo(undoStack.current.length > 0)
   }, [])
 
-  // Ctrl+Z / Cmd+Z
   useEffect(() => {
     const handler = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
@@ -123,6 +140,11 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
     }
   }, [pan, zoom])
 
+  // Fuente de restauración: foto original si disponible, sino el cutout
+  const getRestoreSource = useCallback(() =>
+    origPhotoRef.current || origCutRef.current
+  , [])
+
   // ── Dibujo ─────────────────────────────────────────────────────────────────
   const paintAt = useCallback((cx, cy) => {
     const ctx = canvasRef.current.getContext('2d')
@@ -139,11 +161,11 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
       ctx.beginPath()
       ctx.arc(cx, cy, r, 0, Math.PI * 2)
       ctx.clip()
-      ctx.drawImage(origRef.current, 0, 0)
+      ctx.drawImage(getRestoreSource(), 0, 0)
       ctx.restore()
     }
     ctx.globalCompositeOperation = 'source-over'
-  }, [tool, brushSize])
+  }, [tool, brushSize, getRestoreSource])
 
   const paintLine = useCallback((from, to) => {
     const dist  = Math.hypot(to.x - from.x, to.y - from.y)
@@ -173,13 +195,13 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
     } else {
       ctx.clip()
       ctx.globalCompositeOperation = 'source-over'
-      ctx.drawImage(origRef.current, 0, 0)
+      ctx.drawImage(getRestoreSource(), 0, 0)
     }
     ctx.restore()
     setLassoPoints([])
     setLassoClosed(false)
     setLassoNearClose(false)
-  }, [lassoPoints, saveSnapshot])
+  }, [lassoPoints, saveSnapshot, getRestoreSource])
 
   const cancelLasso = useCallback(() => {
     setLassoPoints([])
@@ -206,38 +228,30 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
     if (e.button !== 0 && e.pointerType !== 'touch') return
     e.preventDefault()
 
-    // Pan con botón medio o herramienta pan
     if (tool === 'pan' || e.button === 1) {
       isPanning.current = true
       panOrigin.current = { clientX: e.clientX, clientY: e.clientY, panX: pan.x, panY: pan.y }
       return
     }
 
-    // Lazo
     if (tool === 'lasso') {
       if (lassoClosed) return
-
-      // Doble clic cierra el lazo
       if (e.detail === 2 && lassoPoints.length >= 3) {
         setLassoClosed(true)
         return
       }
-
-      // Clic cerca del primer punto cierra el lazo
       if (checkLassoClose(e.clientX, e.clientY)) {
         setLassoClosed(true)
         return
       }
-
       const pos = screenToCanvas(e.clientX, e.clientY)
       setLassoPoints(prev => [...prev, pos])
       return
     }
 
-    // Dibujo: capturar puntero para seguir recibiendo eventos fuera del elemento
     e.currentTarget.setPointerCapture(e.pointerId)
     activePtId.current = e.pointerId
-    saveSnapshot()  // guardar estado antes de pintar (para undo)
+    saveSnapshot()
     isPointerDown.current = true
     const pos = screenToCanvas(e.clientX, e.clientY)
     lastPos.current = pos
@@ -255,7 +269,6 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
       return
     }
 
-    // Actualizar indicador de cierre de lazo
     if (tool === 'lasso') {
       checkLassoClose(e.clientX, e.clientY)
     }
@@ -266,7 +279,7 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
     lastPos.current = pos
   }, [tool, updateCursor, screenToCanvas, paintLine, checkLassoClose])
 
-  const onPointerUp = useCallback((e) => {
+  const onPointerUp = useCallback(() => {
     isPointerDown.current = false
     isPanning.current     = false
     panOrigin.current     = null
@@ -306,11 +319,11 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
   }, [canvasW, canvasH])
 
   const handleReset = () => {
-    if (!origRef.current || !canvasRef.current) return
+    if (!origCutRef.current || !canvasRef.current) return
     saveSnapshot()
     const ctx = canvasRef.current.getContext('2d')
     ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height)
-    ctx.drawImage(origRef.current, 0, 0)
+    ctx.drawImage(origCutRef.current, 0, 0)
   }
 
   const handleSave = () => onSave(canvasRef.current.toDataURL('image/png').split(',')[1])
@@ -336,46 +349,68 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
       )}
 
       {/* ── Toolbar ── */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-slate-100 bg-slate-50 flex-wrap flex-shrink-0">
+      <div className="flex items-end gap-1.5 px-3 py-2 border-b border-slate-100 bg-slate-50 flex-wrap flex-shrink-0">
 
-        {/* Herramientas */}
-        <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden flex-shrink-0">
-          {[
-            { id: 'erase',   label: 'Borrar',    Icon: Eraser,     active: 'bg-red-50 text-red-700'     },
-            { id: 'restore', label: 'Restaurar', Icon: Paintbrush, active: 'bg-blue-50 text-blue-700'   },
-            { id: 'pan',     label: 'Mover',     Icon: Hand,       active: 'bg-slate-100 text-slate-700' },
-            { id: 'lasso',   label: 'Lazo',      Icon: Scissors,   active: 'bg-yellow-50 text-yellow-700'},
-          ].map(({ id, label, Icon, active }, i) => (
-            <button key={id} onClick={() => { setTool(id); hideCursor() }}
+        {/* Grupo 1 — Modo */}
+        <div className="flex flex-col">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5 mb-0.5">Modo</span>
+          <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden">
+            <button onClick={() => { setPenMode('erase'); hideCursor() }}
               className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors
-                ${i > 0 ? 'border-l border-slate-200' : ''}
-                ${tool === id ? active : 'text-slate-500 hover:bg-slate-50'}`}>
-              <Icon size={13} /> {label}
+                ${penMode === 'erase' ? 'bg-red-50 text-red-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <Eraser size={13} /> Borrar
             </button>
-          ))}
+            <button onClick={() => { setPenMode('restore'); hideCursor() }}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors border-l border-slate-200
+                ${penMode === 'restore' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <Paintbrush size={13} /> Restaurar
+            </button>
+          </div>
         </div>
 
-        {/* Pincel */}
-        {(tool === 'erase' || tool === 'restore') && (
-          <div className="flex items-center gap-2 flex-1 min-w-24 max-w-40">
-            <span className="text-[11px] text-slate-400 flex-shrink-0">Pincel</span>
-            <input type="range" min={4} max={120} value={brushSize}
+        <div className="w-px h-7 bg-slate-200 flex-shrink-0" />
+
+        {/* Grupo 2 — Herramienta */}
+        <div className="flex flex-col">
+          <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5 mb-0.5">Herramienta</span>
+          <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden">
+            {[
+              { id: 'brush', label: 'Pincel', Icon: Paintbrush, active: 'bg-slate-100 text-slate-800' },
+              { id: 'lasso', label: 'Lazo',   Icon: Scissors,   active: 'bg-yellow-50 text-yellow-700' },
+              { id: 'pan',   label: 'Mover',  Icon: Hand,       active: 'bg-slate-100 text-slate-700' },
+            ].map(({ id, label, Icon, active }, i) => (
+              <button key={id}
+                onClick={() => { setPenTool(id); if (id !== 'lasso') cancelLasso(); hideCursor() }}
+                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors
+                  ${i > 0 ? 'border-l border-slate-200' : ''}
+                  ${penTool === id ? active : 'text-slate-500 hover:bg-slate-50'}`}>
+                <Icon size={13} /> {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tamaño de pincel */}
+        {penTool === 'brush' && (
+          <div className="flex items-center gap-2 w-44">
+            <span className="text-[11px] text-slate-400 flex-shrink-0">Tamaño</span>
+            <input type="range" min={2} max={300} value={brushSize}
               onChange={e => setBrushSize(+e.target.value)}
               className="flex-1 h-1 accent-blue-700 cursor-pointer" />
-            <span className="text-[11px] tabular-nums text-slate-500 w-7 text-right">{brushSize}</span>
+            <span className="text-[11px] tabular-nums text-slate-500 w-8 text-right">{brushSize}px</span>
           </div>
         )}
 
-        {/* Lazo: cerrar polígono cuando hay ≥3 puntos y no está cerrado */}
-        {tool === 'lasso' && lassoPoints.length >= 3 && !lassoClosed && (
+        {/* Lazo: botón cerrar zona */}
+        {penTool === 'lasso' && lassoPoints.length >= 3 && !lassoClosed && (
           <button onClick={() => setLassoClosed(true)}
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold bg-yellow-400 text-yellow-900 rounded-lg hover:bg-yellow-500 transition-colors">
-            <Check size={12} /> Cerrar polígono
+            <Check size={12} /> Cerrar zona
           </button>
         )}
 
-        {/* Undo + Zoom (lado derecho) */}
-        <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+        {/* Undo + Zoom — lado derecho */}
+        <div className="flex items-center gap-1 ml-auto">
           <button onClick={undo} disabled={!canUndo}
             title="Deshacer (Ctrl+Z)"
             className="w-7 h-7 flex items-center justify-center rounded-md transition-colors border border-slate-200
@@ -395,16 +430,17 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
             <ZoomIn size={13} />
           </button>
           <button onClick={handleReset}
+            title="Resetear al recorte original de la IA"
             className="flex items-center gap-1 px-2 h-7 rounded-md text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 border border-slate-200 ml-1">
             <RotateCcw size={11} /> Reset
           </button>
         </div>
       </div>
 
-      {/* ── Barra de acción del lazo (solo cuando está cerrado) ── */}
-      {tool === 'lasso' && lassoClosed && (
+      {/* ── Barra de acción del lazo (cuando está cerrado) ── */}
+      {penTool === 'lasso' && lassoClosed && (
         <div className="flex gap-2 px-3 py-2 bg-yellow-50 border-b border-yellow-200 flex-shrink-0">
-          <span className="text-xs text-yellow-700 font-medium self-center mr-1">Zona seleccionada:</span>
+          <span className="text-xs text-yellow-700 font-medium self-center mr-1">Zona seleccionada — aplicar:</span>
           <button onClick={() => applyLasso('erase')}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600">
             <Eraser size={11} /> Borrar zona
@@ -423,19 +459,19 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
       {/* ── Hint ── */}
       <div className="px-3 py-1.5 bg-amber-50 border-b border-amber-100 flex-shrink-0">
         <p className="text-[11px] text-amber-700 leading-snug">
-          {tool === 'erase'   && <>Pintá sobre lo que querés eliminar · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> para deshacer</>}
-          {tool === 'restore' && <>Pintá para recuperar zonas que la IA borró de más · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> para deshacer</>}
+          {tool === 'erase'   && <>Pintá con el pincel para <strong>eliminar</strong> partes del fondo que quedaron · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
+          {tool === 'restore' && <>Pintá para <strong>recuperar</strong> partes del auto que la IA borró de más — toma los píxeles de la foto original · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
           {tool === 'pan'     && 'Arrastrá para mover · Scroll para zoom'}
           {tool === 'lasso'   && !lassoClosed && (
             lassoPoints.length === 0
-              ? 'Clic para agregar puntos del polígono · Doble clic para cerrar'
+              ? 'Clic para agregar puntos del contorno · Doble clic o clic en el primer punto (●) para cerrar la selección'
               : lassoPoints.length < 3
-                ? `${lassoPoints.length} punto${lassoPoints.length > 1 ? 's' : ''} · Necesitás al menos 3`
+                ? `${lassoPoints.length} punto${lassoPoints.length > 1 ? 's' : ''} — necesitás al menos 3`
                 : lassoNearClose
-                  ? '¡Clic para cerrar el polígono!'
-                  : `${lassoPoints.length} puntos · Doble clic o clic en el primer punto (●) para cerrar`
+                  ? '¡Clic para cerrar la selección!'
+                  : `${lassoPoints.length} puntos — doble clic o clic en el primer punto (●) para cerrar`
           )}
-          {tool === 'lasso' && lassoClosed && 'Elegí qué hacer con la zona seleccionada'}
+          {tool === 'lasso' && lassoClosed && 'Elegí si querés borrar o restaurar la zona seleccionada'}
         </p>
       </div>
 
@@ -469,9 +505,8 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
         </div>
 
         {/* SVG overlay del lazo */}
-        {tool === 'lasso' && lassoPoints.length > 0 && (
+        {penTool === 'lasso' && lassoPoints.length > 0 && (
           <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10, overflow: 'hidden' }}>
-            {/* Líneas del polígono */}
             {lassoPoints.length > 1 && (
               <polyline
                 points={lassoPoints.map(p => `${p.x * zoom + pan.x},${p.y * zoom + pan.y}`).join(' ')}
@@ -481,7 +516,6 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
                 strokeDasharray={lassoClosed ? 'none' : '5,3'}
               />
             )}
-            {/* Línea de cierre (cuando está cerrado) */}
             {lassoClosed && lassoPoints.length >= 3 && (
               <polygon
                 points={lassoPoints.map(p => `${p.x * zoom + pan.x},${p.y * zoom + pan.y}`).join(' ')}
@@ -490,7 +524,6 @@ export default function MaskEditor({ cutoutB64, onSave, onCancel }) {
                 strokeWidth="1.5"
               />
             )}
-            {/* Puntos */}
             {lassoPoints.map((p, i) => (
               <circle key={i}
                 cx={p.x * zoom + pan.x}

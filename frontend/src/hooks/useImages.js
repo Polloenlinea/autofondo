@@ -55,6 +55,7 @@ export function useImages() {
         status: 'pending',
         cutoutB64: null, composedB64: null, error: null,
         adjustments: { ...DEFAULT_ADJUSTMENTS },
+        plateApplied: false,
       }))
 
     setImages(prev => [...prev, ...newImgs])
@@ -91,9 +92,12 @@ export function useImages() {
   // ── Procesar (quitar fondo a todas las exteriores pendientes) ─────────────
   // plateOptions: { hidePlate: bool, plateLogoFile: File|null }
   const processAll = useCallback(async (stopRef, plateOptions = {}) => {
+    const needsPlate = !!plateOptions.hidePlate
     const targets = images.filter(img =>
       effectiveType(img) === 'exterior' &&
-      (img.status === 'pending' || img.status === 'error')
+      (img.status === 'pending' || img.status === 'error' ||
+        // Re-procesar imágenes 'done' si se activó la matrícula y no la tienen aplicada
+        (img.status === 'done' && needsPlate && !img.plateApplied))
     )
 
     // Las interiores se marcan como skipped
@@ -109,7 +113,7 @@ export function useImages() {
       try {
         const res = await removeBg(img.file, plateOptions)
         if (!res.ok) throw new Error(res.error || 'Error del servidor')
-        update(img.id, { status: 'done', cutoutB64: res.image })
+        update(img.id, { status: 'done', cutoutB64: res.image, plateApplied: needsPlate })
       } catch (e) {
         update(img.id, { status: 'error', error: e.message })
       }
