@@ -37,7 +37,7 @@ async function removeBg(buffer, modelOverride = null) {
   // Con threshold: 0 nos aseguramos de que SOLO corte lo que es 100% transparente,
   // evitando el efecto "guillotina" en sombras muy oscuras.
   try {
-    return await sharp(raw).trim({ threshold: 0 }).png().toBuffer()
+    return await sharp(raw).trim({ threshold: 10 }).png().toBuffer()
   } catch {
     return raw
   }
