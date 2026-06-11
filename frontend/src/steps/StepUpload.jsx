@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { UploadCloud, Plus, Car, Armchair, Info, AlertTriangle, ShieldCheck, ChevronDown, ChevronUp, ImagePlus, X } from 'lucide-react'
+import { UploadCloud, Plus, Scissors, EyeOff, Info, AlertTriangle, ShieldCheck, ChevronDown, ChevronUp, ImagePlus, X } from 'lucide-react'
 import ImageCard from '../components/ImageCard'
-import { Btn, Badge, Spinner } from '../components/ui'
+import { Btn } from '../components/ui'
 
 export default function StepUpload({ images, rejected, addFiles, toggleType, effectiveType, removeImage, onNext, stats, plateOptions, onPlateOptions }) {
   const [dragging,       setDragging]       = useState(false)
@@ -10,8 +10,7 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
   const inputRef      = useRef()
   const plateLogoRef  = useRef()
 
-  const detecting = images.some(i => i.detectedType === 'detecting')
-  const canContinue = images.length > 0 && !detecting
+  const canContinue = images.length > 0
 
   // ── Drag & drop global ────────────────────────────────────────────────────
   useEffect(() => {
@@ -207,32 +206,25 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
         <>
           {/* Counters */}
           <div className="flex items-center gap-2 flex-wrap">
-            {detecting
-              ? <><Spinner size="xs" color="text-slate-400" /><span className="text-xs text-slate-500">Analizando imágenes…</span></>
-              : <>
-                  <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md">
-                    <Car size={11} strokeWidth={2} /> {stats.exterior} exteriores
-                  </div>
-                  {stats.interior > 0 && (
-                    <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md">
-                      <Armchair size={11} strokeWidth={2} /> {stats.interior} interiores
-                    </div>
-                  )}
-                </>
-            }
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md">
+              <Scissors size={11} strokeWidth={2} /> {stats.exterior} con recorte
+            </div>
+            {stats.interior > 0 && (
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md">
+                <EyeOff size={11} strokeWidth={2} /> {stats.interior} sin recorte
+              </div>
+            )}
             <span className="text-xs text-slate-400 ml-auto">{stats.total} imagen{stats.total !== 1 ? 'es' : ''}</span>
           </div>
 
-          {/* Info interiores */}
-          {!detecting && stats.interior > 0 && (
-            <div className="flex gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-              <Info size={15} className="text-slate-400 mt-0.5 flex-shrink-0" strokeWidth={2} />
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Las imágenes de <span className="font-semibold text-slate-700">interior</span> (tablero, asientos, cuentakilómetros) no se recortan.
-                Si alguna está mal clasificada, tocá <span className="font-semibold">cambiar</span>.
-              </p>
-            </div>
-          )}
+          {/* Info acción */}
+          <div className="flex gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+            <Info size={15} className="text-slate-400 mt-0.5 flex-shrink-0" strokeWidth={2} />
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Por defecto se quitará el fondo a todas las imágenes.
+              Si hay fotos de interior (tablero, asientos) que no querés recortar, tocá <span className="font-semibold text-slate-700">No recortar</span> en cada una.
+            </p>
+          </div>
 
           {/* Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -258,10 +250,7 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
               <Plus size={15} /> Agregar
             </Btn>
             <Btn variant="primary" size="full" onClick={onNext} disabled={!canContinue}>
-              {detecting
-                ? <><Spinner size="sm" /> Analizando…</>
-                : `Continuar — procesar ${stats.exterior} imagen${stats.exterior !== 1 ? 'es' : ''}`
-              }
+              Continuar — procesar {stats.exterior} imagen{stats.exterior !== 1 ? 'es' : ''}
             </Btn>
           </div>
         </div>

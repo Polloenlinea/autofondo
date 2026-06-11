@@ -97,13 +97,15 @@ async function detectPlatePoly(imageBuffer) {
         if (cleanText.length >= 5 && PLATE_RE_CLEAN.test(cleanText)) {
           // Asegurar que todos los tokens en este slice tienen vértices válidos
           if (slice.every(w => w.verts?.length === 4)) {
-            const allV = slice.flatMap(w => w.verts)
-            const xs = allV.map(v => v.x || 0), ys = allV.map(v => v.y || 0)
+            // Preservar perspectiva real: Vision API devuelve [TL, TR, BR, BL] por token.
+            // Para tokens en fila: TL/BL del primero + TR/BR del último → paralelo real.
+            const first = slice[0].verts
+            const last  = slice[slice.length - 1].verts
             const poly = [
-              [Math.min(...xs), Math.min(...ys)],
-              [Math.max(...xs), Math.min(...ys)],
-              [Math.max(...xs), Math.max(...ys)],
-              [Math.min(...xs), Math.max(...ys)],
+              [first[0].x || 0, first[0].y || 0],  // TL del primer token
+              [last[1].x  || 0, last[1].y  || 0],  // TR del último token
+              [last[2].x  || 0, last[2].y  || 0],  // BR del último token
+              [first[3].x || 0, first[3].y || 0],  // BL del primer token
             ]
             console.log(`[plateCensor] matrícula detectada (${window} tokens): "${combinedRaw}" (limpio: ${cleanText}) → ${JSON.stringify(poly)}`)
             return poly

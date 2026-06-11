@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { detectType, removeBg, adjustImage } from '../services/api'
+import { removeBg, adjustImage } from '../services/api'
 import { detectBlobs } from '../utils/blobDetect'
 
 export const DEFAULT_ADJUSTMENTS = { brightness: 1, contrast: 1, rotation: 0 }
@@ -51,7 +51,8 @@ export function useImages() {
       .map(f => ({
         id: uid(), file: f,
         previewUrl: URL.createObjectURL(f),
-        detectedType: 'detecting', detectedConfidence: 0,
+        detectedType: 'exterior',   // por defecto: quitar fondo a todo
+        detectedConfidence: 1,
         typeOverride: null,
         status: 'pending',
         cutoutB64: null, composedB64: null, error: null,
@@ -60,22 +61,6 @@ export function useImages() {
       }))
 
     setImages(prev => [...prev, ...newImgs])
-
-    // Detección automática de cada imagen (paralela, rápida)
-    await Promise.all(newImgs.map(async img => {
-      try {
-        const res = await detectType(img.file)
-        setImages(prev => prev.map(i => i.id === img.id ? {
-          ...i,
-          detectedType: res.type ?? 'exterior',
-          detectedConfidence: res.confidence ?? 0.5,
-        } : i))
-      } catch {
-        setImages(prev => prev.map(i => i.id === img.id ? {
-          ...i, detectedType: 'exterior', detectedConfidence: 0.5,
-        } : i))
-      }
-    }))
   }, [])
 
   // ── Cambiar tipo manualmente ──────────────────────────────────────────────

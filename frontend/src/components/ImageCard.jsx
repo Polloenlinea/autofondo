@@ -1,9 +1,8 @@
-import { X, Car, Armchair, Loader2, AlertCircle, ZoomIn } from 'lucide-react'
+import { X, Scissors, EyeOff, Loader2, AlertCircle, ZoomIn } from 'lucide-react'
 import { Spinner } from './ui'
 
 export default function ImageCard({ img, effectiveType, onToggleType, onRemove, onZoom, showResult = false }) {
   const type = effectiveType(img)
-  const detecting = img.detectedType === 'detecting'
 
   const resultB64  = showResult ? (img.composedB64 || img.cutoutB64) : null
   const resultMime = img.composedB64 ? 'jpeg' : 'png'
@@ -76,23 +75,19 @@ export default function ImageCard({ img, effectiveType, onToggleType, onRemove, 
         <div className="flex items-center justify-between gap-1">
           {/* Tipo */}
           <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold
-            ${detecting
-              ? 'bg-slate-100 text-slate-400'
-              : type === 'exterior'
-                ? 'bg-blue-50 text-blue-700'
-                : 'bg-slate-100 text-slate-600'
+            ${type === 'exterior'
+              ? 'bg-blue-50 text-blue-700'
+              : 'bg-slate-100 text-slate-500'
             }`}>
-            {detecting
-              ? <Loader2 size={10} className="animate-spin" />
-              : type === 'exterior'
-                ? <Car size={10} strokeWidth={2} />
-                : <Armchair size={10} strokeWidth={2} />
+            {type === 'exterior'
+              ? <Scissors size={10} strokeWidth={2} />
+              : <EyeOff size={10} strokeWidth={2} />
             }
-            {detecting ? 'Detectando' : type === 'exterior' ? 'Exterior' : 'Interior'}
+            {type === 'exterior' ? 'Quitar fondo' : 'No recortar'}
           </div>
 
           {/* Cambiar tipo */}
-          {onToggleType && !detecting && (
+          {onToggleType && (
             <button
               onClick={onToggleType}
               className="text-[11px] text-slate-400 hover:text-blue-700 transition-colors

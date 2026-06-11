@@ -4,7 +4,7 @@ import { Btn } from './ui'
 
 const MAX_UNDO = 20
 
-export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel }) {
+export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel, onDirty }) {
   const canvasRef    = useRef(null)
   const origCutRef   = useRef(null)  // copia del cutout (para Reset)
   const origPhotoRef = useRef(null)  // foto original (para Restaurar)
@@ -96,7 +96,8 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
     const snapshot = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
     undoStack.current = [...undoStack.current.slice(-(MAX_UNDO - 1)), snapshot]
     setCanUndo(true)
-  }, [])
+    onDirty?.()  // notificar al padre que se hizo un cambio
+  }, [onDirty])
 
   const undo = useCallback(() => {
     if (!undoStack.current.length) return
@@ -244,6 +245,12 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
     if (e.button !== 0 && e.pointerType !== 'touch') return
     e.preventDefault()
 
+    // Limpiar estado de pan colgado (si el pointerup se perdió fuera del contenedor)
+    if (tool !== 'pan' && e.button !== 1) {
+      isPanning.current = false
+      panOrigin.current = null
+    }
+
     // Gotero: tomar color del pixel bajo el cursor (desde foto original si disponible)
     if (eyeDropping) {
       const pos = screenToCanvas(e.clientX, e.clientY)
@@ -259,6 +266,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
     }
 
     if (tool === 'pan' || e.button === 1) {
+      e.currentTarget.setPointerCapture(e.pointerId)  // pointerup llega aunque salga del elemento
       isPanning.current = true
       panOrigin.current = { clientX: e.clientX, clientY: e.clientY, panX: pan.x, panY: pan.y }
       return

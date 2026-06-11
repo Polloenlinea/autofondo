@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   X, RotateCw, RefreshCw, Download, Sun, Contrast,
-  ChevronLeft, ChevronRight, Car, Armchair, Scissors, Zap, AlertTriangle
+  ChevronLeft, ChevronRight, Car, Armchair, Scissors, Zap, AlertTriangle, LogOut
 } from 'lucide-react'
 import { Btn, Slider, Spinner } from './ui'
 import MaskEditor from './MaskEditor'
@@ -17,7 +17,9 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
   const [rotation,      setRotation]     = useState(img.adjustments?.rotation   ?? 0)
   const [applying,      setApplying]     = useState(false)
   const [bgMode,        setBgMode]       = useState('checker')
-  const [confirmHQ,     setConfirmHQ]    = useState(false) // mostrar aviso antes de reprocesar con large
+  const [confirmHQ,     setConfirmHQ]    = useState(false)
+  const [maskDirty,     setMaskDirty]    = useState(false)   // hay cambios sin guardar en la máscara
+  const [confirmExit,   setConfirmExit]  = useState(false)   // mostrar diálogo "salir sin guardar"
 
   const currentIdx = images.findIndex(i => i.id === img.id)
   const canPrev = currentIdx > 0
@@ -28,13 +30,24 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
     setContrast(img.adjustments?.contrast     ?? 1)
     setRotation(img.adjustments?.rotation     ?? 0)
     setTab('adjust')
+    setMaskDirty(false)
+    setConfirmExit(false)
   }, [img.id])
 
+  // Cierre controlado: pide confirmación si hay cambios de máscara sin guardar
+  const handleAttemptClose = useCallback((arg) => {
+    if (tab === 'mask' && maskDirty) {
+      setConfirmExit(true)
+    } else {
+      onClose(arg)
+    }
+  }, [tab, maskDirty, onClose])
+
   useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    const handler = (e) => { if (e.key === 'Escape') handleAttemptClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [onClose])
+  }, [handleAttemptClose])
 
   const isDirty = brightness !== (img.adjustments?.brightness ?? 1)
     || contrast !== (img.adjustments?.contrast ?? 1)
@@ -65,9 +78,9 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60"
-      onClick={onClose}>
+      onClick={() => handleAttemptClose()}>
       <div
-        className="bg-white w-full sm:max-w-2xl sm:rounded-xl rounded-t-xl overflow-hidden shadow-2xl flex flex-col"
+        className="bg-white w-full sm:max-w-2xl sm:rounded-xl rounded-t-xl overflow-hidden shadow-2xl flex flex-col relative"
           style={{ height: tab === 'mask' ? 'min(92vh, 780px)' : 'auto', maxHeight: '92vh' }}
         onClick={e => e.stopPropagation()}>
 
@@ -91,7 +104,7 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
             </div>
             <span className="text-sm font-semibold text-slate-700 truncate">{img.file.name}</span>
           </div>
-          <button onClick={onClose}
+          <button onClick={() => handleAttemptClose()}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400
               hover:text-slate-700 hover:bg-slate-100 transition-colors flex-shrink-0">
             <X size={16} />
@@ -122,8 +135,11 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
             <MaskEditor
               cutoutB64={resultB64}
               originalUrl={img.previewUrl}
-              onSave={handleMaskSave}
-              onCancel={() => setTab('adjust')}
+              onSave={(b64) => { setMaskDirty(false); handleMaskSave(b64) }}
+              onCancel={() => {
+                if (maskDirty) { setConfirmExit(true) } else { setTab('adjust') }
+              }}
+              onDirty={() => setMaskDirty(true)}
             />
           </div>
         ) : (
@@ -283,6 +299,35 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Diálogo salir sin guardar ── */}
+        {confirmExit && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/50 rounded-xl">
+            <div className="bg-white rounded-xl shadow-2xl p-5 mx-4 w-full max-w-xs space-y-3">
+              <div className="flex gap-2.5">
+                <LogOut size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-bold text-slate-800">¿Salir sin guardar?</p>
+                  <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                    Tenés cambios en la máscara que se perderán si salís ahora.
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setConfirmExit(false)}
+                  className="flex-1 px-3 py-2 text-xs font-semibold rounded-lg border border-slate-200
+                    text-slate-700 hover:bg-slate-50 transition-colors">
+                  Seguir editando
+                </button>
+                <button onClick={() => { setConfirmExit(false); setMaskDirty(false); setTab('adjust'); onClose() }}
+                  className="flex-1 px-3 py-2 text-xs font-semibold rounded-lg bg-red-500
+                    text-white hover:bg-red-600 transition-colors">
+                  Salir sin guardar
+                </button>
               </div>
             </div>
           </div>

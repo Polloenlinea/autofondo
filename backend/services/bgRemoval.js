@@ -42,7 +42,7 @@ async function removeBg(buffer, modelOverride = null) {
   const { data: px, info: pxInfo } = await sharp(rawResult)
     .ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   for (let i = 3; i < px.length; i += 4) {
-    if (px[i] > 180) px[i] = 255
+    if (px[i] > 128) px[i] = 255   // umbral más agresivo: mayoría de la carrocería → opaco
   }
   const raw = await sharp(px, { raw: { width: pxInfo.width, height: pxInfo.height, channels: 4 } })
     .png().toBuffer()
