@@ -173,19 +173,13 @@ function expandPoly(poly, px = 6) {
 // ── API pública ───────────────────────────────────────────────────────────────
 
 /**
- * Detecta y oculta la matrícula en imageBuffer.
- * @param {Buffer} imageBuffer  imagen original (JPEG/PNG)
- * @param {Buffer|null} logoBuffer  logo del dealer (PNG con transparencia) — si null → chapa negra
- * @returns {{ buffer: Buffer, found: boolean }}
+ * Aplica censura sobre un polígono ya conocido — sin re-detectar.
+ * Útil para aplicar las mismas coordenadas al cutout tras detectar en el original.
  */
-async function censorPlate(imageBuffer, logoBuffer = null) {
-  const poly = await detectPlatePoly(imageBuffer)
-  if (!poly) return { buffer: imageBuffer, found: false }
-
+async function applyPlateCensor(imageBuffer, poly, logoBuffer = null) {
   const { width, height } = await sharp(imageBuffer).metadata()
   const expanded = expandPoly(poly, 8)
 
-  // Polígono negro de base (cubre el área)
   const svgMask = `<svg width="${width}" height="${height}" xmlns="http://www.w3.org/2000/svg">
     <polygon points="${expanded.map(([x, y]) => `${x},${y}`).join(' ')}" fill="black"/>
   </svg>`
@@ -204,11 +198,24 @@ async function censorPlate(imageBuffer, logoBuffer = null) {
         .toBuffer()
     } catch (err) {
       console.warn('[plateCensor] error al warpear logo:', err.message)
-      // Si falla el warp, queda la chapa negra igual
     }
   }
 
-  return { buffer: result, found: true }
+  return result
 }
 
-module.exports = { censorPlate }
+/**
+ * Detecta la matrícula en imageBuffer y devuelve el polígono + buffer censurado.
+ * @param {Buffer} imageBuffer  imagen original (JPEG/PNG) — usar el original para mejor OCR
+ * @param {Buffer|null} logoBuffer  logo del dealer — si null → chapa negra
+ * @returns {{ buffer: Buffer, found: boolean, poly: Array|null }}
+ */
+async function censorPlate(imageBuffer, logoBuffer = null) {
+  const poly = await detectPlatePoly(imageBuffer)
+  if (!poly) return { buffer: imageBuffer, found: false, poly: null }
+
+  const buffer = await applyPlateCensor(imageBuffer, poly, logoBuffer)
+  return { buffer, found: true, poly }
+}
+
+module.exports = { censorPlate, applyPlateCensor }

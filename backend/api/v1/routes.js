@@ -3,7 +3,7 @@ const router   = express.Router()
 const upload   = require('../../middleware/upload')
 const { detectImageType }            = require('../../services/detection')
 const { removeBg }                   = require('../../services/bgRemoval')
-const { censorPlate }                = require('../../services/plateCensor')
+const { censorPlate, applyPlateCensor } = require('../../services/plateCensor')
 const { compose, generatePresetBg }  = require('../../services/composition')
 const { applyAdjustments, resizeOutput } = require('../../services/adjustments')
 const Session   = require('../../models/Session')
@@ -53,17 +53,17 @@ router.post('/remove-bg', upload.fields([
     // 2. Censurar matrícula (si se pidió)
     const hidePlate = req.body.hidePlate === 'true'
     if (hidePlate) {
-      const logoFile  = req.files?.plateLogo?.[0] ?? null
-      const logoBuf   = logoFile ? logoFile.buffer : null
-      // Detectar en la imagen ORIGINAL (más contexto = mejor detección)
-      // Aplicar la máscara sobre el RESULTADO (cutout con fondo transparente)
-      const { buffer: censored, found } = await censorPlate(carFile.buffer, logoBuf)
-      if (found) {
-        // Re-aplicar la máscara de placa sobre el cutout (mismas coordenadas)
-        const { buffer: cutoutCensored } = await censorPlate(resultBuf, logoBuf)
-        resultBuf = cutoutCensored
+      const logoFile = req.files?.plateLogo?.[0] ?? null
+      const logoBuf  = logoFile ? logoFile.buffer : null
+
+      // Detectar UNA sola vez en la imagen ORIGINAL (más contexto = mejor OCR)
+      const { found, poly } = await censorPlate(carFile.buffer, logoBuf)
+      console.log(`[remove-bg] censura matrícula: ${found ? `encontrada → poly ${JSON.stringify(poly)}` : 'no detectada'}`)
+
+      if (found && poly) {
+        // Aplicar el polígono ya conocido al cutout — sin re-detectar
+        resultBuf = await applyPlateCensor(resultBuf, poly, logoBuf)
       }
-      console.log(`[remove-bg] censura matrícula: ${found ? 'encontrada y tapada' : 'no detectada'}`)
     }
 
     res.json({ ok: true, image: resultBuf.toString('base64') })
