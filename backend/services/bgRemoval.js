@@ -49,22 +49,31 @@ async function removeBg(buffer, modelOverride = null) {
 
   try {
     // Recortar para obtener el bounding box real del auto
-    const trimmed = await sharp(raw).trim({ threshold: 10 }).png().toBuffer()
-    const { width: carW, height: carH } = await sharp(trimmed).metadata()
+    const { data: trimmedData, info: trimInfo } = await sharp(raw).trim({ threshold: 10 }).toBuffer({ resolveWithObject: true })
+    const carW = trimInfo.width
+    const carH = trimInfo.height
+
+    const originalLeft = -(trimInfo.trimOffsetLeft || 0)
+    const originalTop  = -(trimInfo.trimOffsetTop || 0)
 
     // Centrar el auto en el canvas original → preserva la composición si el auto
     // estaba centrado, y centra los que estaban descentrados
     const left = Math.max(0, Math.round((origW - carW) / 2))
     const top  = Math.max(0, Math.round((origH - carH) / 2))
 
-    return await sharp({
+    const dx = left - originalLeft
+    const dy = top - originalTop
+
+    const resultBuffer = await sharp({
       create: { width: origW, height: origH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } }
     })
-      .composite([{ input: trimmed, left, top }])
+      .composite([{ input: trimmedData, left, top }])
       .png()
       .toBuffer()
+
+    return { buffer: resultBuffer, offset: { dx, dy } }
   } catch {
-    return raw
+    return { buffer: raw, offset: { dx: 0, dy: 0 } }
   }
 }
 

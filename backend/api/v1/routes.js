@@ -48,7 +48,7 @@ router.post('/remove-bg', upload.fields([
     const allowedModels = ['small', 'medium', 'large']
     const modelOverride = allowedModels.includes(req.body.model) ? req.body.model : null
     if (modelOverride) console.log(`[remove-bg] modelo override: ${modelOverride}`)
-    let resultBuf = await removeBg(carFile.buffer, modelOverride)
+    let { buffer: resultBuf, offset } = await removeBg(carFile.buffer, modelOverride)
 
     // 2. Censurar matrícula (si se pidió)
     const hidePlate = req.body.hidePlate === 'true'
@@ -57,10 +57,14 @@ router.post('/remove-bg', upload.fields([
       const logoBuf  = logoFile ? logoFile.buffer : null
 
       // Detectar UNA sola vez en la imagen ORIGINAL (más contexto = mejor OCR)
-      const { found, poly } = await censorPlate(carFile.buffer, logoBuf)
+      let { found, poly } = await censorPlate(carFile.buffer, logoBuf)
       console.log(`[remove-bg] censura matrícula: ${found ? `encontrada → poly ${JSON.stringify(poly)}` : 'no detectada'}`)
 
       if (found && poly) {
+        // Ajustar el polígono si el auto fue movido durante el centrado
+        if (offset && (offset.dx !== 0 || offset.dy !== 0)) {
+          poly = poly.map(([x, y]) => [x + offset.dx, y + offset.dy])
+        }
         // Aplicar el polígono ya conocido al cutout — sin re-detectar
         resultBuf = await applyPlateCensor(resultBuf, poly, logoBuf)
       }
