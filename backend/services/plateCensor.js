@@ -64,7 +64,8 @@ function inv3(m) {
 // ── Detección de matrícula con Vision API ─────────────────────────────────────
 
 // Patrones: Uruguay ABC 1234 / Argentina AA 001 AA / Brasil AAA0A00 / genérico
-const PLATE_RE = /^[A-Z]{1,4}[\s-]?\d{3,4}[\s-]?[A-Z]{0,2}$|^\d{3,4}[\s-]?[A-Z]{2,4}$/i
+// Se limpia la string de guiones/espacios antes de testear
+const PLATE_RE_CLEAN = /^([A-Z]{2,4}\d{3,4}[A-Z]{0,2}|\d{3,4}[A-Z]{2,4}|[A-Z]{3}\d[A-Z]\d{2})$/i
 
 async function detectPlatePoly(imageBuffer) {
   try {
@@ -79,37 +80,35 @@ async function detectPlatePoly(imageBuffer) {
     }
 
     // La anotación 0 es el bloque total; desde la 1 son palabras/tokens individuales
-    for (const ann of annotations.slice(1)) {
-      const text = (ann.description || '').trim()
-      if (PLATE_RE.test(text)) {
-        const verts = ann.boundingPoly?.vertices
-        if (verts?.length === 4) {
-          const poly = verts.map(v => [v.x || 0, v.y || 0])
-          console.log(`[plateCensor] matrícula detectada: "${text}" → ${JSON.stringify(poly)}`)
-          return poly
-        }
-      }
-    }
-
-    // Fallback: buscar combinaciones de 2 tokens adyacentes (ej: "ABC" + "1234" separados)
     const words = annotations.slice(1).map(a => ({
       text: (a.description || '').trim(),
       verts: a.boundingPoly?.vertices,
     }))
-    for (let i = 0; i < words.length - 1; i++) {
-      const combined = words[i].text + words[i + 1].text
-      if (PLATE_RE.test(combined) && words[i].verts?.length === 4 && words[i + 1].verts?.length === 4) {
-        // Unir los dos bounding boxes
-        const allV = [...words[i].verts, ...words[i + 1].verts]
-        const xs = allV.map(v => v.x || 0), ys = allV.map(v => v.y || 0)
-        const poly = [
-          [Math.min(...xs), Math.min(...ys)],
-          [Math.max(...xs), Math.min(...ys)],
-          [Math.max(...xs), Math.max(...ys)],
-          [Math.min(...xs), Math.max(...ys)],
-        ]
-        console.log(`[plateCensor] matrícula (2 tokens): "${combined}" → ${JSON.stringify(poly)}`)
-        return poly
+
+    // Buscar combinaciones de 1 a 4 tokens adyacentes para armar la matrícula
+    // Esto resuelve cuando la chapa se divide en varios tokens ej: ["AA", "123", "CD"] o ["SBU", "-", "1234"]
+    for (let window = 1; window <= 4; window++) {
+      for (let i = 0; i <= words.length - window; i++) {
+        const slice = words.slice(i, i + window)
+        const combinedRaw = slice.map(w => w.text).join('')
+        // Limpiamos de guiones, puntos y espacios para verificar el patrón
+        const cleanText = combinedRaw.replace(/[^A-Za-z0-9]/g, '')
+        
+        if (cleanText.length >= 5 && PLATE_RE_CLEAN.test(cleanText)) {
+          // Asegurar que todos los tokens en este slice tienen vértices válidos
+          if (slice.every(w => w.verts?.length === 4)) {
+            const allV = slice.flatMap(w => w.verts)
+            const xs = allV.map(v => v.x || 0), ys = allV.map(v => v.y || 0)
+            const poly = [
+              [Math.min(...xs), Math.min(...ys)],
+              [Math.max(...xs), Math.min(...ys)],
+              [Math.max(...xs), Math.max(...ys)],
+              [Math.min(...xs), Math.max(...ys)],
+            ]
+            console.log(`[plateCensor] matrícula detectada (${window} tokens): "${combinedRaw}" (limpio: ${cleanText}) → ${JSON.stringify(poly)}`)
+            return poly
+          }
+        }
       }
     }
 
