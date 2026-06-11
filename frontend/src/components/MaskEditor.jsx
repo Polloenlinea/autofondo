@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
-import { Eraser, Paintbrush, RotateCcw, Check, ZoomIn, ZoomOut, Hand, Scissors, Undo2 } from 'lucide-react'
+import { Eraser, Paintbrush, RotateCcw, Check, ZoomIn, ZoomOut, Hand, Scissors, Undo2, Pencil } from 'lucide-react'
 import { Btn } from './ui'
 
 const MAX_UNDO = 20
@@ -22,9 +22,10 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
   const panOrigin   = useRef(null)
 
   // Modo: qué hace el pincel/lazo
-  const [penMode, setPenMode] = useState('erase')   // 'erase' | 'restore'
+  const [penMode, setPenMode] = useState('erase')   // 'erase' | 'restore' | 'paint'
   // Herramienta: cómo se aplica
   const [penTool, setPenTool] = useState('brush')   // 'brush' | 'lasso' | 'pan'
+  const [paintColor, setPaintColor] = useState('#000000')
 
   // tool derivado para compatibilidad con la lógica de dibujo/eventos
   const tool = penTool === 'brush' ? penMode : penTool
@@ -125,7 +126,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
     el.style.width   = `${diameter}px`
     el.style.height  = `${diameter}px`
     el.style.opacity = '1'
-  }, [brushSize, zoom, tool])
+  }, [brushSize, zoom, tool, paintColor])
 
   const hideCursor = () => { if (cursorRef.current) cursorRef.current.style.opacity = '0' }
 
@@ -155,6 +156,12 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
       ctx.arc(cx, cy, r, 0, Math.PI * 2)
       ctx.fillStyle = 'rgba(0,0,0,1)'
       ctx.fill()
+    } else if (tool === 'paint') {
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.beginPath()
+      ctx.arc(cx, cy, r, 0, Math.PI * 2)
+      ctx.fillStyle = paintColor
+      ctx.fill()
     } else {
       ctx.globalCompositeOperation = 'source-over'
       ctx.save()
@@ -165,7 +172,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
       ctx.restore()
     }
     ctx.globalCompositeOperation = 'source-over'
-  }, [tool, brushSize, getRestoreSource])
+  }, [tool, brushSize, paintColor, getRestoreSource])
 
   const paintLine = useCallback((from, to) => {
     const dist  = Math.hypot(to.x - from.x, to.y - from.y)
@@ -192,6 +199,10 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
       ctx.globalCompositeOperation = 'destination-out'
       ctx.fillStyle = 'rgba(0,0,0,1)'
       ctx.fill()
+    } else if (action === 'paint') {
+      ctx.globalCompositeOperation = 'source-over'
+      ctx.fillStyle = paintColor
+      ctx.fill()
     } else {
       ctx.clip()
       ctx.globalCompositeOperation = 'source-over'
@@ -201,7 +212,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
     setLassoPoints([])
     setLassoClosed(false)
     setLassoNearClose(false)
-  }, [lassoPoints, saveSnapshot, getRestoreSource])
+  }, [lassoPoints, saveSnapshot, getRestoreSource, paintColor])
 
   const cancelLasso = useCallback(() => {
     setLassoPoints([])
@@ -338,12 +349,13 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
     <div className="flex flex-col h-full" style={{ userSelect: 'none' }}>
 
       {/* Cursor pincel */}
-      {(tool === 'erase' || tool === 'restore') && (
+      {(tool === 'erase' || tool === 'restore' || tool === 'paint') && (
         <div ref={cursorRef}
           className="fixed pointer-events-none rounded-full z-[9999] opacity-0"
           style={{
-            border: `2px solid ${tool === 'erase' ? '#ef4444' : '#2563eb'}`,
+            border: `2px solid ${tool === 'erase' ? '#ef4444' : tool === 'paint' ? paintColor : '#2563eb'}`,
             boxShadow: '0 0 0 1.5px rgba(255,255,255,0.7)',
+            background: tool === 'paint' ? paintColor + '40' : undefined,
           }}
         />
       )}
@@ -365,8 +377,40 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
                 ${penMode === 'restore' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
               <Paintbrush size={13} /> Restaurar
             </button>
+            <button onClick={() => { setPenMode('paint'); hideCursor() }}
+              className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors border-l border-slate-200
+                ${penMode === 'paint' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50'}`}>
+              <Pencil size={13} /> Pintar
+            </button>
           </div>
         </div>
+
+        {/* Color picker — solo visible en modo Pintar */}
+        {penMode === 'paint' && penTool !== 'pan' && (
+          <div className="flex items-end gap-1.5">
+            <label className="flex flex-col">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5 mb-0.5">Color</span>
+              <div className="relative w-9 h-9 rounded-lg border-2 border-slate-200 overflow-hidden cursor-pointer hover:border-slate-400 transition-colors"
+                style={{ background: paintColor }}>
+                <input type="color" value={paintColor}
+                  onChange={e => setPaintColor(e.target.value)}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
+              </div>
+            </label>
+            {/* Colores rápidos */}
+            <div className="flex flex-col">
+              <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5 mb-0.5">Rápidos</span>
+              <div className="flex gap-1">
+                {['#000000','#ffffff','#1e40af','#dc2626','#15803d','#d97706'].map(c => (
+                  <button key={c} onClick={() => setPaintColor(c)}
+                    title={c}
+                    className={`w-6 h-6 rounded-md border-2 transition-all ${paintColor === c ? 'border-blue-600 scale-110' : 'border-slate-300 hover:border-slate-500'}`}
+                    style={{ background: c }} />
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="w-px h-7 bg-slate-200 flex-shrink-0" />
 
@@ -439,7 +483,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
 
       {/* ── Barra de acción del lazo (cuando está cerrado) ── */}
       {penTool === 'lasso' && lassoClosed && (
-        <div className="flex gap-2 px-3 py-2 bg-yellow-50 border-b border-yellow-200 flex-shrink-0">
+        <div className="flex gap-2 px-3 py-2 bg-yellow-50 border-b border-yellow-200 flex-shrink-0 flex-wrap">
           <span className="text-xs text-yellow-700 font-medium self-center mr-1">Zona seleccionada — aplicar:</span>
           <button onClick={() => applyLasso('erase')}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-red-500 text-white rounded-lg hover:bg-red-600">
@@ -448,6 +492,11 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
           <button onClick={() => applyLasso('restore')}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             <Paintbrush size={11} /> Restaurar zona
+          </button>
+          <button onClick={() => applyLasso('paint')}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white rounded-lg hover:opacity-90 transition-opacity"
+            style={{ background: paintColor }}>
+            <Pencil size={11} /> Pintar zona
           </button>
           <button onClick={cancelLasso}
             className="px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50">
@@ -461,6 +510,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel })
         <p className="text-[11px] text-amber-700 leading-snug">
           {tool === 'erase'   && <>Pintá con el pincel para <strong>eliminar</strong> partes del fondo que quedaron · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
           {tool === 'restore' && <>Pintá para <strong>recuperar</strong> partes del auto que la IA borró de más — toma los píxeles de la foto original · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
+          {tool === 'paint'   && <>Pintá con color sólido para <strong>tapar</strong> logos, detalles o imperfecciones · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
           {tool === 'pan'     && 'Arrastrá para mover · Scroll para zoom'}
           {tool === 'lasso'   && !lassoClosed && (
             lassoPoints.length === 0
