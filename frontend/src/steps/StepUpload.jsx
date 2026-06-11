@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect } from 'react'
-import { UploadCloud, Plus, Car, Armchair, Info, AlertTriangle } from 'lucide-react'
+import { UploadCloud, Plus, Car, Armchair, Info, AlertTriangle, ShieldCheck, ChevronDown, ChevronUp, ImagePlus, X } from 'lucide-react'
 import ImageCard from '../components/ImageCard'
 import { Btn, Badge, Spinner } from '../components/ui'
 
-export default function StepUpload({ images, rejected, addFiles, toggleType, effectiveType, removeImage, onNext, stats }) {
-  const [dragging, setDragging] = useState(false)
-  const inputRef = useRef()
+export default function StepUpload({ images, rejected, addFiles, toggleType, effectiveType, removeImage, onNext, stats, plateOptions, onPlateOptions }) {
+  const [dragging,       setDragging]       = useState(false)
+  const [plateOpen,      setPlateOpen]      = useState(false)
+  const [plateLogoPreview, setPlateLogoPreview] = useState(null)
+  const inputRef      = useRef()
+  const plateLogoRef  = useRef()
 
   const detecting = images.some(i => i.detectedType === 'detecting')
   const canContinue = images.length > 0 && !detecting
@@ -71,6 +74,116 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
               Seleccionar archivos
             </Btn>
           </>
+        )}
+      </div>
+
+      {/* ── Opciones de procesamiento ── */}
+      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+        <button
+          onClick={() => setPlateOpen(v => !v)}
+          className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
+          <div className="flex items-center gap-2.5">
+            <ShieldCheck size={15} className={plateOptions.hidePlate ? 'text-blue-700' : 'text-slate-400'} />
+            <span className="text-sm font-semibold text-slate-700">Opciones de privacidad</span>
+            {plateOptions.hidePlate && (
+              <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                Activo
+              </span>
+            )}
+          </div>
+          {plateOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+        </button>
+
+        {plateOpen && (
+          <div className="px-4 pb-4 border-t border-slate-100 pt-3 space-y-3">
+            <p className="text-xs text-slate-500">
+              Detecta y oculta automáticamente la matrícula al quitar el fondo.
+            </p>
+
+            {/* Toggle ocultar matrícula */}
+            <label className="flex items-center gap-3 cursor-pointer select-none">
+              <div className="relative">
+                <input type="checkbox" className="sr-only peer"
+                  checked={plateOptions.hidePlate}
+                  onChange={e => onPlateOptions({ ...plateOptions, hidePlate: e.target.checked })} />
+                <div className="w-10 h-6 bg-slate-200 rounded-full peer-checked:bg-blue-700
+                  after:content-[''] after:absolute after:top-1 after:left-1 after:bg-white
+                  after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-700">Ocultar matrícula automáticamente</p>
+                <p className="text-xs text-slate-400">Se detecta la chapa y se tapa con negro o tu logo</p>
+              </div>
+            </label>
+
+            {/* Opciones de logo (solo cuando hidePlate=true) */}
+            {plateOptions.hidePlate && (
+              <div className="pl-13 space-y-2 pt-1">
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 ml-[52px]">Reemplazar con</p>
+                <div className="ml-[52px] space-y-2">
+                  {/* Opción: chapa negra */}
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input type="radio" name="plateMode"
+                      checked={!plateOptions.plateLogoFile}
+                      onChange={() => {
+                        onPlateOptions({ ...plateOptions, plateLogoFile: null })
+                        setPlateLogoPreview(null)
+                      }}
+                      className="accent-blue-700" />
+                    <span className="text-sm text-slate-700">Chapa negra</span>
+                    <span className="inline-block w-12 h-4 rounded bg-black opacity-80" />
+                  </label>
+
+                  {/* Opción: logo del dealer */}
+                  <label className="flex items-center gap-2.5 cursor-pointer">
+                    <input type="radio" name="plateMode"
+                      checked={!!plateOptions.plateLogoFile}
+                      onChange={() => plateLogoRef.current?.click()}
+                      className="accent-blue-700" />
+                    <span className="text-sm text-slate-700">Logo de mi automotora</span>
+                  </label>
+
+                  {/* Input oculto para el logo */}
+                  <input ref={plateLogoRef} type="file" accept="image/*" className="hidden"
+                    onChange={e => {
+                      const f = e.target.files[0]
+                      if (!f) return
+                      onPlateOptions({ ...plateOptions, plateLogoFile: f })
+                      const url = URL.createObjectURL(f)
+                      setPlateLogoPreview(url)
+                    }} />
+
+                  {/* Preview del logo cargado */}
+                  {plateLogoPreview && (
+                    <div className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200 w-fit">
+                      <img src={plateLogoPreview} className="h-7 max-w-[80px] object-contain" alt="Logo" />
+                      <button
+                        onClick={() => {
+                          onPlateOptions({ ...plateOptions, plateLogoFile: null })
+                          setPlateLogoPreview(null)
+                        }}
+                        className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                        <X size={11} />
+                      </button>
+                    </div>
+                  )}
+
+                  {plateOptions.plateLogoFile && !plateLogoPreview && (
+                    <button onClick={() => plateLogoRef.current?.click()}
+                      className="flex items-center gap-1.5 text-xs text-blue-700 hover:underline">
+                      <ImagePlus size={12} /> Cargar logo
+                    </button>
+                  )}
+                  {!plateOptions.plateLogoFile && plateOptions.hidePlate && (
+                    <button onClick={() => plateLogoRef.current?.click()}
+                      className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-700 transition-colors">
+                      <ImagePlus size={12} /> Cargar logo para usar en las chapas
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         )}
       </div>
 

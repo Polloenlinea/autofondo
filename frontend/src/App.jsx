@@ -13,6 +13,7 @@ export default function App() {
   const [step,         setStep]         = useState(0)
   const [outputSize,   setOutputSize]   = useState('original')
   const [showSessions, setShowSessions] = useState(false)
+  const [plateOptions, setPlateOptions] = useState({ hidePlate: false, plateLogoFile: null })
 
   const {
     images, rejected, addFiles, toggleType, effectiveType,
@@ -22,7 +23,7 @@ export default function App() {
 
   const { sessions, saveSession, deleteSession, loadSession } = useSessions()
 
-  const reset = () => { clearAll(); setStep(0); setOutputSize('original') }
+  const reset = () => { clearAll(); setStep(0); setOutputSize('original'); setPlateOptions({ hidePlate: false, plateLogoFile: null }) }
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -69,6 +70,7 @@ export default function App() {
             images={images} rejected={rejected} addFiles={addFiles}
             toggleType={toggleType} effectiveType={effectiveType}
             removeImage={removeImage} stats={stats}
+            plateOptions={plateOptions} onPlateOptions={setPlateOptions}
             onNext={() => setStep(1)}
           />
         )}
@@ -79,6 +81,7 @@ export default function App() {
             reprocess={reprocess} applyAdjustments={applyAdjustments}
             removeImage={removeImage}
             stats={stats}
+            plateOptions={plateOptions}
             onNext={(size) => { if (size) setOutputSize(size); setStep(2) }}
             onBack={() => setStep(0)}
           />

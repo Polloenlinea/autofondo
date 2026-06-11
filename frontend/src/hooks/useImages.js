@@ -89,7 +89,8 @@ export function useImages() {
   const effectiveType = (img) => img.typeOverride ?? img.detectedType
 
   // ── Procesar (quitar fondo a todas las exteriores pendientes) ─────────────
-  const processAll = useCallback(async (stopRef) => {
+  // plateOptions: { hidePlate: bool, plateLogoFile: File|null }
+  const processAll = useCallback(async (stopRef, plateOptions = {}) => {
     const targets = images.filter(img =>
       effectiveType(img) === 'exterior' &&
       (img.status === 'pending' || img.status === 'error')
@@ -106,7 +107,7 @@ export function useImages() {
       if (stopRef?.current) break
       update(img.id, { status: 'processing', error: null })
       try {
-        const res = await removeBg(img.file)
+        const res = await removeBg(img.file, plateOptions)
         if (!res.ok) throw new Error(res.error || 'Error del servidor')
         update(img.id, { status: 'done', cutoutB64: res.image })
       } catch (e) {
@@ -152,12 +153,12 @@ export function useImages() {
   }, [images, update])
 
   // ── Re-procesar una imagen (volver a quitar fondo) ────────────────────────
-  const reprocess = useCallback(async (id) => {
+  const reprocess = useCallback(async (id, plateOptions = {}) => {
     const img = images.find(i => i.id === id)
     if (!img) return
     update(id, { status: 'processing', cutoutB64: null, composedB64: null, error: null })
     try {
-      const res = await removeBg(img.file)
+      const res = await removeBg(img.file, plateOptions)
       if (!res.ok) throw new Error(res.error || 'Error del servidor')
       update(id, { status: 'done', cutoutB64: res.image })
     } catch (e) {

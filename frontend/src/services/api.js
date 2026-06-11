@@ -29,9 +29,16 @@ export async function detectType(file) {
   return res.json()
 }
 
-export async function removeBg(file) {
+// plateOptions: { hidePlate: bool, plateLogoFile: File|null }
+export async function removeBg(file, plateOptions = {}) {
   const form = new FormData()
   form.append('file', file)
+  if (plateOptions.hidePlate) {
+    form.append('hidePlate', 'true')
+    if (plateOptions.plateLogoFile) {
+      form.append('plateLogo', plateOptions.plateLogoFile)
+    }
+  }
   const res = await apiFetch(`${BASE}/remove-bg`, { method: 'POST', body: form })
   return res.json()
 }

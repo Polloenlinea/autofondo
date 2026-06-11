@@ -14,7 +14,7 @@ const OUTPUT_SIZES = [
 export default function StepReview({
   images, effectiveType, toggleType,
   processAll, reprocess, applyAdjustments, removeImage,
-  stats, onNext, onBack
+  stats, plateOptions, onNext, onBack
 }) {
   const stopRef  = useRef(false)
   const ranRef   = useRef(false)
@@ -41,7 +41,7 @@ export default function StepReview({
     if (!ranRef.current) {
       ranRef.current = true
       stopRef.current = false
-      processAll(stopRef)
+      processAll(stopRef, plateOptions)
     }
   }, [])
 
@@ -271,7 +271,7 @@ export default function StepReview({
             </Btn>
           )}
           {!isRunning && stats.error > 0 && (
-            <Btn variant="secondary" onClick={() => { stopRef.current = false; processAll(stopRef) }}>
+            <Btn variant="secondary" onClick={() => { stopRef.current = false; processAll(stopRef, plateOptions) }}>
               <RotateCcw size={14} /> Reintentar
             </Btn>
           )}

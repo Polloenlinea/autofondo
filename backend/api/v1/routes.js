@@ -3,6 +3,7 @@ const router   = express.Router()
 const upload   = require('../../middleware/upload')
 const { detectImageType }            = require('../../services/detection')
 const { removeBg }                   = require('../../services/bgRemoval')
+const { censorPlate }                = require('../../services/plateCensor')
 const { compose, generatePresetBg }  = require('../../services/composition')
 const { applyAdjustments, resizeOutput } = require('../../services/adjustments')
 const Session   = require('../../models/Session')
@@ -31,11 +32,37 @@ router.post('/detect', upload.single('file'), async (req, res) => {
 })
 
 // ── Eliminar fondo ────────────────────────────────────────────────────────────
-router.post('/remove-bg', upload.single('file'), async (req, res) => {
+// Campos multer: 'file' (requerido) + 'plateLogo' (opcional, PNG del dealer)
+router.post('/remove-bg', upload.fields([
+  { name: 'file',      maxCount: 1 },
+  { name: 'plateLogo', maxCount: 1 },
+]), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ ok: false, error: 'No se recibió archivo' })
-    console.log(`[remove-bg] ${req.file.originalname} ${Math.round(req.file.size/1024)}KB`)
-    const resultBuf = await removeBg(req.file.buffer)
+    const fileArr = req.files?.file
+    if (!fileArr?.length) return res.status(400).json({ ok: false, error: 'No se recibió archivo' })
+
+    const carFile = fileArr[0]
+    console.log(`[remove-bg] ${carFile.originalname} ${Math.round(carFile.size / 1024)}KB`)
+
+    // 1. Quitar fondo
+    let resultBuf = await removeBg(carFile.buffer)
+
+    // 2. Censurar matrícula (si se pidió)
+    const hidePlate = req.body.hidePlate === 'true'
+    if (hidePlate) {
+      const logoFile  = req.files?.plateLogo?.[0] ?? null
+      const logoBuf   = logoFile ? logoFile.buffer : null
+      // Detectar en la imagen ORIGINAL (más contexto = mejor detección)
+      // Aplicar la máscara sobre el RESULTADO (cutout con fondo transparente)
+      const { buffer: censored, found } = await censorPlate(carFile.buffer, logoBuf)
+      if (found) {
+        // Re-aplicar la máscara de placa sobre el cutout (mismas coordenadas)
+        const { buffer: cutoutCensored } = await censorPlate(resultBuf, logoBuf)
+        resultBuf = cutoutCensored
+      }
+      console.log(`[remove-bg] censura matrícula: ${found ? 'encontrada y tapada' : 'no detectada'}`)
+    }
+
     res.json({ ok: true, image: resultBuf.toString('base64') })
   } catch (e) {
     console.error('[remove-bg]', e.message)
