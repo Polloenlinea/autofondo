@@ -73,6 +73,10 @@ async function detectPlatePoly(imageBuffer) {
       image: { content: imageBuffer.toString('base64') },
     })
     const annotations = result.textAnnotations || []
+    
+    if (annotations.length > 0) {
+      console.log(`[plateCensor] Texto completo detectado: ${JSON.stringify(annotations[0].description)}`)
+    }
 
     // La anotación 0 es el bloque total; desde la 1 son palabras/tokens individuales
     for (const ann of annotations.slice(1)) {
