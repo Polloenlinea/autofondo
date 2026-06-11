@@ -258,9 +258,9 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
                       <div className="space-y-1">
                         <p className="text-sm font-semibold text-amber-800">¿Confirmar reprocesado?</p>
                         <p className="text-xs text-amber-700 leading-relaxed">
-                          El modelo de alta calidad puede tardar <strong>hasta 60 segundos</strong> y
-                          consume significativamente más recursos del servidor. Usalo solo cuando el
-                          recorte estándar no haya quedado bien.
+                          Esta función emplea un modelo de alta calidad que puede tardar <strong>hasta 60 segundos</strong> y
+                          consume significativamente más recursos del servidor. Usalo solo cuando el resultado
+                          con las herramientas y el recorte estándar no haya quedado bien.
                         </p>
                       </div>
                     </div>
