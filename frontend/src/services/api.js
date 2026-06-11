@@ -29,16 +29,15 @@ export async function detectType(file) {
   return res.json()
 }
 
-// plateOptions: { hidePlate: bool, plateLogoFile: File|null }
-export async function removeBg(file, plateOptions = {}) {
+// options: { hidePlate: bool, plateLogoFile: File|null, model: 'small'|'medium'|'large' }
+export async function removeBg(file, options = {}) {
   const form = new FormData()
   form.append('file', file)
-  if (plateOptions.hidePlate) {
+  if (options.hidePlate) {
     form.append('hidePlate', 'true')
-    if (plateOptions.plateLogoFile) {
-      form.append('plateLogo', plateOptions.plateLogoFile)
-    }
+    if (options.plateLogoFile) form.append('plateLogo', options.plateLogoFile)
   }
+  if (options.model) form.append('model', options.model)
   const res = await apiFetch(`${BASE}/remove-bg`, { method: 'POST', body: form })
   return res.json()
 }

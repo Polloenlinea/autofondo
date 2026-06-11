@@ -23,11 +23,12 @@ async function warmup() {
   }
 }
 
-async function removeBg(buffer) {
+// modelOverride permite usar 'large' para reprocesado de alta calidad individual
+async function removeBg(buffer, modelOverride = null) {
   const sharp  = require('sharp')
   const blob   = new Blob([buffer], { type: 'image/png' })
   const result = await removeBackground(blob, {
-    model:  MODEL,
+    model:  modelOverride || MODEL,
     output: { format: 'image/png', quality: 1.0 },
   })
   const raw = Buffer.from(await result.arrayBuffer())
@@ -42,4 +43,4 @@ async function removeBg(buffer) {
   }
 }
 
-module.exports = { removeBg, warmup }
+module.exports = { removeBg, warmup, MODEL }

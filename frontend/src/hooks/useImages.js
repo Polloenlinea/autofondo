@@ -152,13 +152,13 @@ export function useImages() {
     }
   }, [images, update])
 
-  // ── Re-procesar una imagen (volver a quitar fondo) ────────────────────────
-  const reprocess = useCallback(async (id, plateOptions = {}) => {
+  // ── Re-procesar una imagen — acepta { model: 'large' } para alta calidad ──
+  const reprocess = useCallback(async (id, options = {}) => {
     const img = images.find(i => i.id === id)
     if (!img) return
     update(id, { status: 'processing', cutoutB64: null, composedB64: null, error: null })
     try {
-      const res = await removeBg(img.file, plateOptions)
+      const res = await removeBg(img.file, options)
       if (!res.ok) throw new Error(res.error || 'Error del servidor')
       update(id, { status: 'done', cutoutB64: res.image })
     } catch (e) {

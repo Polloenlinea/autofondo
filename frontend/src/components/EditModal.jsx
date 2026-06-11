@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   X, RotateCw, RefreshCw, Download, Sun, Contrast,
-  ChevronLeft, ChevronRight, Car, Armchair, Scissors
+  ChevronLeft, ChevronRight, Car, Armchair, Scissors, Zap, AlertTriangle
 } from 'lucide-react'
 import { Btn, Slider, Spinner } from './ui'
 import MaskEditor from './MaskEditor'
@@ -11,12 +11,13 @@ import MaskEditor from './MaskEditor'
  * Pestañas: Ajustes | Máscara
  */
 export default function EditModal({ img, images, effectiveType, onClose, onApply, onReprocess, onToggleType }) {
-  const [tab,        setTab]        = useState('adjust') // 'adjust' | 'mask'
-  const [brightness, setBrightness] = useState(img.adjustments?.brightness ?? 1)
-  const [contrast,   setContrast]   = useState(img.adjustments?.contrast   ?? 1)
-  const [rotation,   setRotation]   = useState(img.adjustments?.rotation   ?? 0)
-  const [applying,   setApplying]   = useState(false)
-  const [bgMode,     setBgMode]     = useState('checker')
+  const [tab,           setTab]          = useState('adjust') // 'adjust' | 'mask'
+  const [brightness,    setBrightness]   = useState(img.adjustments?.brightness ?? 1)
+  const [contrast,      setContrast]     = useState(img.adjustments?.contrast   ?? 1)
+  const [rotation,      setRotation]     = useState(img.adjustments?.rotation   ?? 0)
+  const [applying,      setApplying]     = useState(false)
+  const [bgMode,        setBgMode]       = useState('checker')
+  const [confirmHQ,     setConfirmHQ]    = useState(false) // mostrar aviso antes de reprocesar con large
 
   const currentIdx = images.findIndex(i => i.id === img.id)
   const canPrev = currentIdx > 0
@@ -233,17 +234,55 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
                 </div>
               )}
 
-              {/* Re-procesar */}
+              {/* Re-procesar con modelo large */}
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Corrección IA</p>
-                <button onClick={() => { onReprocess(img.id); onClose() }}
-                  disabled={img.status === 'processing'}
-                  className="flex items-center gap-2 text-sm font-medium text-slate-600
-                    hover:text-blue-700 bg-slate-50 hover:bg-blue-50 px-3 py-2 rounded-lg
-                    transition-colors border border-slate-200 disabled:opacity-40 w-full sm:w-auto">
-                  <RefreshCw size={14} /> Volver a procesar con IA
-                </button>
-                <p className="text-xs text-slate-400 mt-1.5">Si el recorte quedó mal, la IA lo intenta de nuevo</p>
+
+                {!confirmHQ ? (
+                  <>
+                    <button onClick={() => setConfirmHQ(true)}
+                      disabled={img.status === 'processing'}
+                      className="flex items-center gap-2 text-sm font-medium text-slate-600
+                        hover:text-blue-700 bg-slate-50 hover:bg-blue-50 px-3 py-2 rounded-lg
+                        transition-colors border border-slate-200 disabled:opacity-40">
+                      <Zap size={14} /> Reprocesar en alta calidad
+                    </button>
+                    <p className="text-xs text-slate-400 mt-1.5">
+                      Usa el modelo más preciso para bordes difíciles
+                    </p>
+                  </>
+                ) : (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2.5">
+                    <div className="flex gap-2">
+                      <AlertTriangle size={15} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-amber-800">¿Confirmar reprocesado?</p>
+                        <p className="text-xs text-amber-700 leading-relaxed">
+                          El modelo de alta calidad puede tardar <strong>hasta 60 segundos</strong> y
+                          consume significativamente más recursos del servidor. Usalo solo cuando el
+                          recorte estándar no haya quedado bien.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setConfirmHQ(false)}
+                        className="flex-1 text-xs font-semibold text-slate-600 bg-white border border-slate-200
+                          px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors">
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={() => {
+                          setConfirmHQ(false)
+                          onReprocess(img.id, { model: 'large' })
+                          onClose()
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold
+                          text-white bg-amber-600 hover:bg-amber-700 px-3 py-2 rounded-lg transition-colors">
+                        <Zap size={12} /> Sí, reprocesar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

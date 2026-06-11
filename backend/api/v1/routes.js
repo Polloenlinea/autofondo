@@ -44,8 +44,11 @@ router.post('/remove-bg', upload.fields([
     const carFile = fileArr[0]
     console.log(`[remove-bg] ${carFile.originalname} ${Math.round(carFile.size / 1024)}KB`)
 
-    // 1. Quitar fondo
-    let resultBuf = await removeBg(carFile.buffer)
+    // 1. Quitar fondo (model=large solo para reprocesado individual de alta calidad)
+    const allowedModels = ['small', 'medium', 'large']
+    const modelOverride = allowedModels.includes(req.body.model) ? req.body.model : null
+    if (modelOverride) console.log(`[remove-bg] modelo override: ${modelOverride}`)
+    let resultBuf = await removeBg(carFile.buffer, modelOverride)
 
     // 2. Censurar matrícula (si se pidió)
     const hidePlate = req.body.hidePlate === 'true'
