@@ -75,13 +75,50 @@ async def compose(
 
         if shadow:
             _, _, _, alpha = car_sc.split()
-            arr = np.zeros((nh, nw, 4), dtype=np.uint8)
-            arr[:, :, 3] = (np.array(alpha) * 100 / 255).astype(np.uint8)
-            shadow_img = Image.fromarray(arr, "RGBA").filter(ImageFilter.GaussianBlur(20))
+            alpha_arr = np.array(alpha, dtype=np.float32)
+
+            # Tomar solo la franja inferior del auto (30% de la altura)
+            # y aplastarla verticalmente para simular sombra en el piso
+            strip_h = max(1, int(nh * 0.30))
+            bottom_strip = alpha_arr[nh - strip_h:, :]
+
+            shadow_h = max(1, int(nh * 0.08))   # la sombra aplastada: 8% de la altura del auto
+            shadow_w = int(nw * 1.10)            # un poco más ancha que el auto
+
+            # Redimensionar la franja: aplastar verticalmente, ensanchar levemente
+            strip_pil = Image.fromarray(bottom_strip.astype(np.uint8)).resize(
+                (shadow_w, shadow_h), Image.LANCZOS
+            )
+            shadow_alpha = np.array(strip_pil, dtype=np.float32)
+
+            # Gradiente horizontal: desvanece hacia los extremos
+            gradient_x = np.linspace(0, 1, shadow_w)
+            gradient_x = np.minimum(gradient_x, 1 - gradient_x) * 2   # 0→1→0
+            gradient_x = np.clip(gradient_x, 0, 1)
+
+            # Gradiente vertical: desvanece hacia abajo (el borde lejano al auto se difumina)
+            gradient_y = np.linspace(1, 0.2, shadow_h).reshape(-1, 1)
+
+            shadow_alpha = shadow_alpha * gradient_x * gradient_y
+            shadow_alpha = np.clip(shadow_alpha * 1.6, 0, 200)  # máx opacidad 200/255 ≈ 78%
+
+            # Construir imagen RGBA negra con esa alpha
+            arr = np.zeros((shadow_h, shadow_w, 4), dtype=np.uint8)
+            arr[:, :, 3] = shadow_alpha.astype(np.uint8)
+            shadow_img = Image.fromarray(arr, "RGBA")
+
+            # Blur horizontal fuerte para suavizar
+            shadow_img = shadow_img.filter(ImageFilter.GaussianBlur(radius=12))
+
+            # Centrar la sombra horizontalmente respecto al auto,
+            # pegarla justo debajo de él
+            sx = x + (nw - shadow_w) // 2
+            sy = y + nh - shadow_h // 2   # se superpone un poco con la base del auto
+
             shadow_layer = Image.new("RGBA", bg_img.size, (0, 0, 0, 0))
-            shadow_layer.paste(shadow_img,
-                (min(x + 8, bg_img.width - 1), min(y + 14, bg_img.height - 1)),
-                shadow_img)
+            paste_x = max(0, min(sx, bg_img.width  - 1))
+            paste_y = max(0, min(sy, bg_img.height - 1))
+            shadow_layer.paste(shadow_img, (paste_x, paste_y), shadow_img)
             result = Image.alpha_composite(result, shadow_layer)
 
         result.paste(car_sc, (x, y), car_sc)

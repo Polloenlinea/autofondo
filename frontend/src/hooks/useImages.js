@@ -1,23 +1,11 @@
 import { useState, useCallback } from 'react'
-import { removeBg, adjustImage } from '../services/api'
+import { removeBg, adjustImage, composeImage } from '../services/api'
 import { detectBlobs } from '../utils/blobDetect'
 
 export const DEFAULT_ADJUSTMENTS = { brightness: 1, contrast: 1, rotation: 0 }
 
 const uid = () => Math.random().toString(36).slice(2, 9)
 
-/**
- * Estado de cada imagen:
- * { id, file, previewUrl,
- *   detectedType: 'exterior'|'interior'|'detecting',
- *   detectedConfidence: 0-1,
- *   typeOverride: null | 'exterior' | 'interior',   ← el usuario puede cambiar
- *   status: 'pending'|'processing'|'done'|'error'|'skipped',
- *   cutoutB64: string|null,
- *   composedB64: string|null,
- *   error: string|null }
- */
-// Formatos soportados por el backend (sharp + @imgly)
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp'])
 const ALLOWED_EXT  = new Set(['.jpg', '.jpeg', '.png', '.webp'])
 
@@ -29,13 +17,12 @@ function isSupported(file) {
 
 export function useImages() {
   const [images,   setImages]   = useState([])
-  const [rejected, setRejected] = useState([]) // nombres de archivos rechazados
+  const [rejected, setRejected] = useState([])
 
   const update = useCallback((id, patch) =>
     setImages(prev => prev.map(img => img.id === id ? { ...img, ...patch } : img))
   , [])
 
-  // ── Agregar archivos y arrancar detección ─────────────────────────────────
   const addFiles = useCallback(async (files) => {
     const all = Array.from(files)
     const bad = all.filter(f => !isSupported(f))
@@ -43,27 +30,26 @@ export function useImages() {
 
     if (bad.length) {
       setRejected(bad.map(f => f.name))
-      setTimeout(() => setRejected([]), 6000) // limpiar aviso después de 6s
+      setTimeout(() => setRejected([]), 6000)
     }
     if (!ok.length) return
 
-    const newImgs = ok
-      .map(f => ({
-        id: uid(), file: f,
-        previewUrl: URL.createObjectURL(f),
-        detectedType: 'exterior',   // por defecto: quitar fondo a todo
-        detectedConfidence: 1,
-        typeOverride: null,
-        status: 'pending',
-        cutoutB64: null, composedB64: null, error: null,
-        adjustments: { ...DEFAULT_ADJUSTMENTS },
-        plateApplied: false,
-      }))
+    const newImgs = ok.map(f => ({
+      id: uid(), file: f,
+      previewUrl: URL.createObjectURL(f),
+      detectedType: 'exterior',
+      detectedConfidence: 1,
+      typeOverride: null,
+      status: 'pending',
+      cutoutB64: null, composedB64: null, bgSettings: null,
+      error: null,
+      adjustments: { ...DEFAULT_ADJUSTMENTS },
+      plateApplied: false,
+    }))
 
     setImages(prev => [...prev, ...newImgs])
   }, [])
 
-  // ── Cambiar tipo manualmente ──────────────────────────────────────────────
   const toggleType = useCallback((id) => {
     setImages(prev => prev.map(img => {
       if (img.id !== id) return img
@@ -72,21 +58,16 @@ export function useImages() {
     }))
   }, [])
 
-  // ── Resolver tipo efectivo ────────────────────────────────────────────────
   const effectiveType = (img) => img.typeOverride ?? img.detectedType
 
-  // ── Procesar (quitar fondo a todas las exteriores pendientes) ─────────────
-  // plateOptions: { hidePlate: bool, plateLogoFile: File|null }
   const processAll = useCallback(async (stopRef, plateOptions = {}) => {
     const needsPlate = !!plateOptions.hidePlate
     const targets = images.filter(img =>
       effectiveType(img) === 'exterior' &&
       (img.status === 'pending' || img.status === 'error' ||
-        // Re-procesar imágenes 'done' si se activó la matrícula y no la tienen aplicada
         (img.status === 'done' && needsPlate && !img.plateApplied))
     )
 
-    // Las interiores se marcan como skipped
     setImages(prev => prev.map(img =>
       effectiveType(img) === 'interior' && img.status === 'pending'
         ? { ...img, status: 'skipped' }
@@ -99,24 +80,21 @@ export function useImages() {
       try {
         const res = await removeBg(img.file, plateOptions)
         if (!res.ok) throw new Error(res.error || 'Error del servidor')
-        // Detectar múltiples autos en paralelo (no bloquea el flujo)
         const blobs = await detectBlobs(res.image)
-        update(img.id, { status: 'done', cutoutB64: res.image, plateApplied: needsPlate, blobs })
+        update(img.id, { status: 'done', cutoutB64: res.image, plateApplied: needsPlate, blobs, horizontal: !!res.horizontal })
       } catch (e) {
         update(img.id, { status: 'error', error: e.message })
       }
     }
   }, [images, update])
 
-  // ── Aplicar ajustes a imagen recortada ───────────────────────────────────
+  // Returns new cutoutB64 or null (so callers can chain recompose)
   const applyAdjustments = useCallback(async (id, adj) => {
     const img = images.find(i => i.id === id)
-    if (!img) return
+    if (!img) return null
 
-    // Si viene _maskB64, es un canvas editado manualmente → usarlo directamente
     if (adj._maskB64) {
       const { _maskB64, ...cleanAdj } = adj
-      // Si hay ajustes además de la máscara, aplicarlos sobre el nuevo PNG
       const hasAdj = cleanAdj.brightness !== 1 || cleanAdj.contrast !== 1 || cleanAdj.rotation !== 0
       if (hasAdj) {
         update(id, { status: 'processing' })
@@ -124,27 +102,30 @@ export function useImages() {
           const res = await adjustImage(_maskB64, cleanAdj)
           if (!res.ok) throw new Error(res.error)
           update(id, { cutoutB64: res.image, adjustments: cleanAdj, composedB64: null, status: 'done' })
+          return res.image
         } catch (e) {
           update(id, { status: 'done', error: e.message })
+          return null
         }
       } else {
         update(id, { cutoutB64: _maskB64, composedB64: null, status: 'done' })
+        return _maskB64
       }
-      return
     }
 
-    if (!img.cutoutB64) return
+    if (!img.cutoutB64) return null
     update(id, { status: 'processing' })
     try {
       const res = await adjustImage(img.cutoutB64, adj)
       if (!res.ok) throw new Error(res.error)
       update(id, { cutoutB64: res.image, adjustments: adj, composedB64: null, status: 'done' })
+      return res.image
     } catch (e) {
       update(id, { status: 'done', error: e.message })
+      return null
     }
   }, [images, update])
 
-  // ── Re-procesar una imagen — acepta { model: 'large' } para alta calidad ──
   const reprocess = useCallback(async (id, options = {}) => {
     const img = images.find(i => i.id === id)
     if (!img) return
@@ -153,29 +134,66 @@ export function useImages() {
       const res = await removeBg(img.file, options)
       if (!res.ok) throw new Error(res.error || 'Error del servidor')
       const blobs = await detectBlobs(res.image)
-      update(id, { status: 'done', cutoutB64: res.image, blobs })
+      update(id, { status: 'done', cutoutB64: res.image, blobs, horizontal: !!res.horizontal })
     } catch (e) {
       update(id, { status: 'error', error: e.message })
     }
   }, [images, update])
 
-  // Aplicar selección de blob: reemplaza cutoutB64 y limpia blobs
+  // Re-compone una imagen con nuevas bgSettings. cutoutB64Override permite pasar
+  // un cutout recién generado sin esperar que el estado de React se propague.
+  const recomposeOne = useCallback(async (id, bgConfig, cutoutB64Override = null) => {
+    const img = images.find(i => i.id === id)
+    const cutoutB64 = cutoutB64Override ?? img?.cutoutB64
+    if (!cutoutB64) return
+    update(id, { status: 'processing' })
+    try {
+      const res = await composeImage({ cutoutB64, ...bgConfig })
+      if (res.ok) {
+        update(id, { composedB64: res.image, bgSettings: bgConfig, status: 'done' })
+      } else {
+        update(id, { status: 'done' })
+      }
+    } catch {
+      update(id, { status: 'done' })
+    }
+  }, [images, update])
+
   const applyBlobSelection = useCallback((id, newB64) => {
     update(id, { cutoutB64: newB64, blobs: [], composedB64: null })
   }, [update])
 
-  const removeImage = useCallback((id) =>
-    setImages(prev => prev.filter(img => img.id !== id))
+  const removeImage  = useCallback((id) => setImages(prev => prev.filter(img => img.id !== id)), [])
+  const clearAll     = useCallback(() => setImages([]), [])
+
+  // Guarda bgSettings y composedB64 juntos (llamado desde StepBackground)
+  const setComposed = useCallback((id, b64, bgCfg = null) =>
+    update(id, bgCfg ? { composedB64: b64, bgSettings: bgCfg } : { composedB64: b64 })
+  , [update])
+
+  // Limpia composedB64 en todas las imágenes (al volver de Background a Review)
+  const clearComposed = useCallback(() =>
+    setImages(prev => prev.map(img => ({ ...img, composedB64: null })))
   , [])
 
-  const clearAll = useCallback(() => setImages([]), [])
-
-  const setComposed = useCallback((id, b64) => update(id, { composedB64: b64 }), [update])
+  // Reinicia el procesamiento al volver de Review a Upload
+  const resetProcessing = useCallback(() =>
+    setImages(prev => prev.map(img => ({
+      ...img,
+      status: 'pending',
+      cutoutB64: null,
+      composedB64: null,
+      bgSettings: null,
+      plateApplied: false,
+      blobs: [],
+      error: null,
+    })))
+  , [])
 
   return {
     images, rejected, addFiles, toggleType, effectiveType,
     processAll, reprocess, applyAdjustments, applyBlobSelection,
-    removeImage, clearAll, setComposed,
+    removeImage, clearAll, setComposed, clearComposed, resetProcessing, recomposeOne,
     stats: {
       total:      images.length,
       exterior:   images.filter(i => effectiveType(i) === 'exterior').length,

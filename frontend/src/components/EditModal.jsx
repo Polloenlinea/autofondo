@@ -1,30 +1,56 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   X, RotateCw, RefreshCw, Download, Sun, Contrast,
-  ChevronLeft, ChevronRight, Car, Armchair, Scissors, Zap, AlertTriangle, LogOut
+  ChevronLeft, ChevronRight, Car, Armchair, Scissors, Zap, AlertTriangle,
+  LogOut, ImagePlus, Layers,
 } from 'lucide-react'
-import { Btn, Slider, Spinner } from './ui'
+import { Btn, Slider, Toggle, Spinner, SectionLabel } from './ui'
 import MaskEditor from './MaskEditor'
+import { BG_PRESETS } from '../constants/bgPresets'
 
 /**
- * Modal de edición individual
- * Pestañas: Ajustes | Máscara
+ * Modal de edición individual — disponible en todos los pasos.
+ *
+ * context: 'review' | 'background' | 'export'
+ *   'review'             → tabs: Ajustes · Recorte
+ *   'background'|'export'→ tabs: Ajustes · Recorte · Fondo
+ *
+ * onRecompose(id, bgConfig, cutoutB64Override?) — recompone con nuevos ajustes
  */
-export default function EditModal({ img, images, effectiveType, onClose, onApply, onReprocess, onToggleType }) {
-  const [tab,           setTab]          = useState('adjust') // 'adjust' | 'mask'
-  const [brightness,    setBrightness]   = useState(img.adjustments?.brightness ?? 1)
-  const [contrast,      setContrast]     = useState(img.adjustments?.contrast   ?? 1)
-  const [rotation,      setRotation]     = useState(img.adjustments?.rotation   ?? 0)
-  const [applying,      setApplying]     = useState(false)
-  const [bgMode,        setBgMode]       = useState('checker')
-  const [confirmHQ,     setConfirmHQ]    = useState(false)
-  const [maskDirty,     setMaskDirty]    = useState(false)   // hay cambios sin guardar en la máscara
-  const [confirmExit,   setConfirmExit]  = useState(false)   // mostrar diálogo "salir sin guardar"
+export default function EditModal({
+  img, images, effectiveType,
+  context = 'review',
+  onClose, onApply, onReprocess, onToggleType, onRecompose,
+}) {
+  const canEditBg = context !== 'review'
+
+  // ── Ajustes (tab adjust) ──────────────────────────────────────────────────
+  const [tab,          setTab]         = useState('adjust')
+  const [brightness,   setBrightness]  = useState(img.adjustments?.brightness ?? 1)
+  const [contrast,     setContrast]    = useState(img.adjustments?.contrast   ?? 1)
+  const [rotation,     setRotation]    = useState(img.adjustments?.rotation   ?? 0)
+  const [applying,     setApplying]    = useState(false)
+  const [bgMode,       setBgMode]      = useState('checker')
+  const [confirmHQ,    setConfirmHQ]   = useState(false)
+  const [maskDirty,    setMaskDirty]   = useState(false)
+  const [confirmExit,  setConfirmExit] = useState(false)
+
+  // ── Fondo (tab bg) ────────────────────────────────────────────────────────
+  const [bgPreset,    setBgPreset]   = useState(img.bgSettings?.preset  ?? 'white')
+  const [bgFile,      setBgFile]     = useState(img.bgSettings?.bgFile  ?? null)
+  const [bgFileUrl,   setBgFileUrl]  = useState(img.bgSettings?.bgFile ? URL.createObjectURL(img.bgSettings.bgFile) : null)
+  const [bgScale,     setBgScale]    = useState(img.bgSettings?.scale   ?? 80)
+  const [bgPosX,      setBgPosX]     = useState(img.bgSettings?.posX    ?? 50)
+  const [bgPosY,      setBgPosY]     = useState(img.bgSettings?.posY    ?? 60)
+  const [bgShadow,     setBgShadow]     = useState(img.bgSettings?.shadow     ?? true)
+  const [bgReflection, setBgReflection] = useState(img.bgSettings?.reflection ?? false)
+  const [bgApplying,  setBgApplying] = useState(false)
 
   const currentIdx = images.findIndex(i => i.id === img.id)
   const canPrev = currentIdx > 0
   const canNext = currentIdx < images.length - 1
 
+  // Resetear al cambiar de imagen
   useEffect(() => {
     setBrightness(img.adjustments?.brightness ?? 1)
     setContrast(img.adjustments?.contrast     ?? 1)
@@ -32,9 +58,17 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
     setTab('adjust')
     setMaskDirty(false)
     setConfirmExit(false)
+    setConfirmHQ(false)
+    setBgPreset(img.bgSettings?.preset ?? 'white')
+    setBgFile(img.bgSettings?.bgFile   ?? null)
+    setBgFileUrl(img.bgSettings?.bgFile ? URL.createObjectURL(img.bgSettings.bgFile) : null)
+    setBgScale(img.bgSettings?.scale   ?? 80)
+    setBgPosX(img.bgSettings?.posX     ?? 50)
+    setBgPosY(img.bgSettings?.posY     ?? 60)
+    setBgShadow(img.bgSettings?.shadow ?? true)
+    setBgReflection(img.bgSettings?.reflection ?? false)
   }, [img.id])
 
-  // Cierre controlado: pide confirmación si hay cambios de máscara sin guardar
   const handleAttemptClose = useCallback((arg) => {
     if (tab === 'mask' && maskDirty) {
       setConfirmExit(true)
@@ -53,36 +87,67 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
     || contrast !== (img.adjustments?.contrast ?? 1)
     || rotation !== (img.adjustments?.rotation ?? 0)
 
+  // Aplicar ajustes y, si estamos en contexto bg, recomponer
   const handleApply = async () => {
     setApplying(true)
-    await onApply(img.id, { brightness, contrast, rotation })
+    const newCutout = await onApply(img.id, { brightness, contrast, rotation })
     setApplying(false)
+    if (canEditBg && img.bgSettings && onRecompose && newCutout) {
+      await onRecompose(img.id, img.bgSettings, newCutout)
+    }
   }
 
-  const handleReset = () => { setBrightness(1); setContrast(1); setRotation(0) }
+  const handleReset  = () => { setBrightness(1); setContrast(1); setRotation(0) }
   const handleRotate = () => setRotation(r => (r + 90) % 360)
 
-  // Guardar máscara editada (viene como b64 desde MaskEditor)
   const handleMaskSave = useCallback(async (newB64) => {
     setApplying(true)
-    await onApply(img.id, { brightness, contrast, rotation, _maskB64: newB64 })
+    const newCutout = await onApply(img.id, { brightness, contrast, rotation, _maskB64: newB64 })
     setApplying(false)
+    setMaskDirty(false)
     setTab('adjust')
-  }, [img.id, brightness, contrast, rotation, onApply])
+    if (canEditBg && img.bgSettings && onRecompose) {
+      await onRecompose(img.id, img.bgSettings, newCutout ?? newB64)
+    }
+  }, [img.id, img.bgSettings, brightness, contrast, rotation, onApply, onRecompose, canEditBg])
 
-  const type = effectiveType(img)
+  // Aplicar nuevo fondo a esta imagen
+  const handleBgApply = async () => {
+    if (!onRecompose) return
+    setBgApplying(true)
+    const cfg = {
+      bgFile:  bgFile ?? null,
+      preset:  bgFile ? null : bgPreset,
+      scale:   bgScale,
+      posX:    bgPosX,
+      posY:    bgPosY,
+      shadow:  bgShadow,
+      reflection: bgReflection && !!img.horizontal,
+    }
+    await onRecompose(img.id, cfg)
+    setBgApplying(false)
+  }
+
+  const type         = effectiveType(img)
   const previewFilter = `brightness(${brightness}) contrast(${contrast})`
   const previewTransform = rotation ? `rotate(${rotation}deg)` : undefined
-  const bgClass = bgMode === 'checker' ? 'checker' : bgMode === 'white' ? 'bg-white' : 'bg-slate-900'
-  const resultB64 = img.cutoutB64
+  const bgClass      = bgMode === 'checker' ? 'checker' : bgMode === 'white' ? 'bg-white' : 'bg-slate-900'
+  const resultB64    = img.cutoutB64
+
+  const TABS = [
+    { id: 'adjust', label: 'Ajustes' },
+    { id: 'mask',   label: 'Recorte', icon: <Scissors size={12} /> },
+    ...(canEditBg ? [{ id: 'bg', label: 'Fondo', icon: <Layers size={12} /> }] : []),
+  ]
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60"
       onClick={() => handleAttemptClose()}>
       <div
         className="bg-white w-full sm:max-w-2xl sm:rounded-xl rounded-t-xl overflow-hidden shadow-2xl flex flex-col relative"
-          style={{ height: tab === 'mask' ? 'min(92vh, 780px)' : 'auto', maxHeight: '92vh' }}
-        onClick={e => e.stopPropagation()}>
+        style={{ height: tab === 'mask' ? 'min(92vh, 780px)' : 'auto', maxHeight: '92vh' }}
+        onClick={e => e.stopPropagation()}
+      >
 
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 flex-shrink-0">
@@ -114,10 +179,7 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
         {/* ── Tabs ── */}
         {resultB64 && (
           <div className="flex border-b border-slate-100 flex-shrink-0">
-            {[
-              { id: 'adjust', label: 'Ajustes' },
-              { id: 'mask',   label: 'Editar máscara', icon: <Scissors size={12} /> },
-            ].map(t => (
+            {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex items-center gap-1.5 px-5 py-2.5 text-sm font-semibold border-b-2 transition-colors
                   ${tab === t.id
@@ -129,7 +191,7 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
           </div>
         )}
 
-        {/* ── Tab: Máscara ── */}
+        {/* ── Tab: Recorte (Máscara) ── */}
         {tab === 'mask' && resultB64 ? (
           <div style={{ flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <MaskEditor
@@ -142,6 +204,96 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
               onDirty={() => setMaskDirty(true)}
             />
           </div>
+
+        /* ── Tab: Fondo ── */
+        ) : tab === 'bg' && resultB64 ? (
+          <div className="overflow-y-auto flex-1 p-4 space-y-5">
+
+            {/* Vista previa del resultado actual */}
+            {img.composedB64 && (
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Fondo actual</p>
+                <div className="rounded-lg overflow-hidden bg-slate-100 aspect-video flex items-center justify-center">
+                  {img.status === 'processing'
+                    ? <Spinner size="md" color="text-blue-700" />
+                    : <img src={`data:image/jpeg;base64,${img.composedB64}`}
+                        className="w-full h-full object-contain" />
+                  }
+                </div>
+              </div>
+            )}
+
+            {/* Presets */}
+            <div>
+              <SectionLabel>Fondo</SectionLabel>
+              <div className="grid grid-cols-4 gap-2 mb-2">
+                {BG_PRESETS.map(p => (
+                  <button key={p.id}
+                    onClick={() => { setBgPreset(p.id); setBgFile(null); setBgFileUrl(null) }}
+                    className={`relative h-12 rounded-lg transition-all border-2
+                      ${bgPreset === p.id && !bgFile
+                        ? 'border-blue-600 ring-2 ring-blue-100'
+                        : 'border-transparent hover:border-slate-300'}`}
+                    style={p.style}>
+                    <span className={`absolute bottom-1 left-0 right-0 text-center text-[10px] font-semibold
+                      ${['dark','city','sunset','forest'].includes(p.id) ? 'text-white/80' : 'text-slate-600'}`}>
+                      {p.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Imagen personalizada */}
+              <label className={`block cursor-pointer rounded-lg border border-dashed overflow-hidden transition-all
+                ${bgFileUrl ? 'border-transparent' : 'border-slate-200 hover:border-blue-400 bg-slate-50'}`}>
+                <input type="file" accept="image/*" className="hidden"
+                  onChange={e => {
+                    const f = e.target.files[0]
+                    if (f) {
+                      setBgFile(f)
+                      setBgFileUrl(URL.createObjectURL(f))
+                      setBgPreset(null)
+                    }
+                  }} />
+                {bgFileUrl
+                  ? <div className="relative group h-16">
+                      <img src={bgFileUrl} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                        <span className="opacity-0 group-hover:opacity-100 text-white text-xs font-semibold bg-black/60 px-2 py-1 rounded transition-opacity">Cambiar</span>
+                      </div>
+                      <button onClick={e => { e.preventDefault(); setBgFile(null); setBgFileUrl(null); setBgPreset('white') }}
+                        className="absolute top-1.5 right-1.5 w-5 h-5 bg-black/60 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <X size={10} />
+                      </button>
+                    </div>
+                  : <div className="flex items-center gap-2 px-3 py-2.5">
+                      <ImagePlus size={14} className="text-slate-400" strokeWidth={1.5} />
+                      <span className="text-xs text-slate-500">Subir imagen de fondo personalizada</span>
+                    </div>
+                }
+              </label>
+            </div>
+
+            {/* Posición */}
+            <div className="space-y-3">
+              <SectionLabel>Posición y tamaño</SectionLabel>
+              <Slider label="Tamaño del auto"     value={bgScale} min={10} max={120} unit="%" onChange={setBgScale} />
+              <Slider label="Posición horizontal" value={bgPosX}  min={0}  max={100} unit="%" onChange={setBgPosX} />
+              <Slider label="Posición vertical"   value={bgPosY}  min={0}  max={100} unit="%" onChange={setBgPosY} />
+              <Toggle label="Sombra bajo el auto" value={bgShadow} onChange={setBgShadow} />
+              {img.horizontal && (
+                <Toggle label="Reflejo (autos de perfil)" value={bgReflection} onChange={setBgReflection} />
+              )}
+            </div>
+
+            {/* Aplicar */}
+            <Btn variant="primary" size="full" onClick={handleBgApply} disabled={bgApplying}>
+              {bgApplying
+                ? <><Spinner size="sm" /> Aplicando fondo…</>
+                : 'Aplicar fondo a esta imagen'}
+            </Btn>
+          </div>
+
         ) : (
           /* ── Tab: Ajustes ── */
           <div className="overflow-y-auto flex-1">
@@ -218,23 +370,23 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
                     <div className="flex items-center gap-3">
                       <Sun size={14} className="text-slate-400 flex-shrink-0" />
                       <div className="flex-1">
-                        <Slider label="Brillo" value={Math.round((brightness-0.5)*100)}
-                          min={-50} max={50} unit=""
-                          onChange={v => setBrightness(+(0.5+v/100).toFixed(2))} />
+                        <Slider label="Brillo" value={Math.round((brightness-1)*100)}
+                          min={-100} max={100} unit=""
+                          onChange={v => setBrightness(+(1+v/100).toFixed(2))} />
                       </div>
                       <span className="text-xs tabular-nums text-slate-400 w-8 text-right">
-                        {brightness>1?'+':''}{Math.round((brightness-1)*100)}
+                        {brightness > 1 ? '+' : ''}{Math.round((brightness-1)*100)}
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
                       <Contrast size={14} className="text-slate-400 flex-shrink-0" />
                       <div className="flex-1">
-                        <Slider label="Contraste" value={Math.round((contrast-0.5)*100)}
-                          min={-50} max={50} unit=""
-                          onChange={v => setContrast(+(0.5+v/100).toFixed(2))} />
+                        <Slider label="Contraste" value={Math.round((contrast-1)*100)}
+                          min={-100} max={100} unit=""
+                          onChange={v => setContrast(+(1+v/100).toFixed(2))} />
                       </div>
                       <span className="text-xs tabular-nums text-slate-400 w-8 text-right">
-                        {contrast>1?'+':''}{Math.round((contrast-1)*100)}
+                        {contrast > 1 ? '+' : ''}{Math.round((contrast-1)*100)}
                       </span>
                     </div>
                   </div>
@@ -253,7 +405,6 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
               {/* Re-procesar con modelo large */}
               <div className="border-t border-slate-100 pt-4">
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Corrección IA</p>
-
                 {!confirmHQ ? (
                   <>
                     <button onClick={() => setConfirmHQ(true)}
@@ -275,8 +426,7 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
                         <p className="text-sm font-semibold text-amber-800">¿Confirmar reprocesado?</p>
                         <p className="text-xs text-amber-700 leading-relaxed">
                           Esta función emplea un modelo de alta calidad que puede tardar <strong>hasta 60 segundos</strong> y
-                          consume significativamente más recursos del servidor. Usalo solo cuando el resultado
-                          con las herramientas y el recorte estándar no haya quedado bien.
+                          consume significativamente más recursos. Usalo solo cuando el recorte estándar no haya quedado bien.
                         </p>
                       </div>
                     </div>
@@ -287,11 +437,7 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
                         Cancelar
                       </button>
                       <button
-                        onClick={() => {
-                          setConfirmHQ(false)
-                          onReprocess(img.id, { model: 'large' })
-                          onClose()
-                        }}
+                        onClick={() => { setConfirmHQ(false); onReprocess(img.id, { model: 'large' }); onClose() }}
                         className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold
                           text-white bg-amber-600 hover:bg-amber-700 px-3 py-2 rounded-lg transition-colors">
                         <Zap size={12} /> Sí, reprocesar
@@ -313,7 +459,7 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
                 <div>
                   <p className="text-sm font-bold text-slate-800">¿Salir sin guardar?</p>
                   <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                    Tenés cambios en la máscara que se perderán si salís ahora.
+                    Tenés cambios en el recorte que se perderán si salís ahora.
                   </p>
                 </div>
               </div>
@@ -333,7 +479,7 @@ export default function EditModal({ img, images, effectiveType, onClose, onApply
           </div>
         )}
 
-        {/* ── Footer — solo en tab ajustes ── */}
+        {/* ── Footer ── */}
         {tab === 'adjust' && (
           <div className="border-t border-slate-100 px-4 py-3 flex gap-2 flex-shrink-0">
             {resultB64 && (

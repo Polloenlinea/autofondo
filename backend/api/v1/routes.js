@@ -4,11 +4,13 @@ const upload   = require('../../middleware/upload')
 const { detectImageType }            = require('../../services/detection')
 const { removeBg }                   = require('../../services/bgRemoval')
 const { censorPlate, applyPlateCensor } = require('../../services/plateCensor')
-const { compose, generatePresetBg }  = require('../../services/composition')
+const { compose, generatePresetBg, isHorizontal } = require('../../services/composition')
 const { applyAdjustments, resizeOutput } = require('../../services/adjustments')
-const Session   = require('../../models/Session')
-const BgHistory = require('../../models/BgHistory')
-const WmHistory = require('../../models/WmHistory')
+const Session    = require('../../models/Session')
+const BgHistory  = require('../../models/BgHistory')
+const WmHistory  = require('../../models/WmHistory')
+const Lead       = require('../../models/Lead')
+const AccessCode = require('../../models/AccessCode')
 
 // Helper: obtener clientId del header (o 'anonymous' si no viene)
 const cid = (req) => req.headers['x-client-id'] || 'anonymous'
@@ -70,7 +72,9 @@ router.post('/remove-bg', upload.fields([
       }
     }
 
-    res.json({ ok: true, image: resultBuf.toString('base64') })
+    const horizontal = await isHorizontal(resultBuf)
+
+    res.json({ ok: true, image: resultBuf.toString('base64'), horizontal })
   } catch (e) {
     console.error('[remove-bg]', e.message)
     res.status(500).json({ ok: false, error: e.message })
@@ -100,10 +104,11 @@ router.post('/compose', upload.fields([
     const result = await compose({
       carBuffer: carFile.buffer,
       bgBuffer,
-      scale:  parseFloat(req.body.scale  ?? 80),
-      posX:   parseFloat(req.body.pos_x  ?? 50),
-      posY:   parseFloat(req.body.pos_y  ?? 60),
-      shadow: req.body.shadow === 'true',
+      scale:     parseFloat(req.body.scale  ?? 80),
+      posX:      parseFloat(req.body.pos_x  ?? 50),
+      posY:      parseFloat(req.body.pos_y  ?? 60),
+      shadow:    req.body.shadow === 'true',
+      reflection: req.body.reflection === 'true',
     })
 
     res.json({ ok: true, image: result.toString('base64') })
@@ -366,6 +371,54 @@ router.delete('/wm-history/:id', async (req, res) => {
   try {
     await WmHistory.deleteOne({ _id: req.params.id, clientId: cid(req) })
     res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message })
+  }
+})
+
+// ── Leads (registro desde landing) ───────────────────────────────────────────
+const jsonSmall = express.json({ limit: '1mb' })
+
+router.post('/leads', jsonSmall, async (req, res) => {
+  if (!requireMongo(res)) return
+  try {
+    const { nombre, empresa, email, tel } = req.body
+    if (!nombre || !empresa || !email)
+      return res.status(400).json({ ok: false, error: 'Faltan campos requeridos' })
+    const lead = await Lead.create({ nombre, empresa, email, tel: tel || '' })
+    res.json({ ok: true, leadId: lead._id.toString() })
+  } catch (e) {
+    if (e.code === 11000)
+      return res.status(409).json({ ok: false, error: 'Este email ya está registrado' })
+    res.status(500).json({ ok: false, error: e.message })
+  }
+})
+
+// ── Códigos de acceso directo ─────────────────────────────────────────────────
+router.get('/access/:code', async (req, res) => {
+  if (!requireMongo(res)) return
+  try {
+    const code = req.params.code.toUpperCase()
+    const ac   = await AccessCode.findOne({ code, active: true })
+    if (!ac) return res.status(404).json({ ok: false, error: 'Código inválido o inactivo' })
+    await AccessCode.updateOne({ _id: ac._id }, { $inc: { uses: 1 } })
+    res.json({ ok: true, label: ac.label })
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message })
+  }
+})
+
+// Generar código (admin — requiere header x-admin-key)
+router.post('/access', jsonSmall, async (req, res) => {
+  if (!requireMongo(res)) return
+  const adminKey = process.env.ADMIN_KEY || 'af-admin-2025'
+  if (req.headers['x-admin-key'] !== adminKey)
+    return res.status(403).json({ ok: false, error: 'No autorizado' })
+  try {
+    const { label } = req.body
+    const code = Math.random().toString(36).slice(2, 8).toUpperCase()
+    const ac   = await AccessCode.create({ code, label: label || '' })
+    res.json({ ok: true, code: ac.code, label: ac.label })
   } catch (e) {
     res.status(500).json({ ok: false, error: e.message })
   }

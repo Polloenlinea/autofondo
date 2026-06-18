@@ -1,7 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { X, RotateCcw, AlertCircle, Settings2, ChevronDown, ChevronUp, Sun, Contrast, Car } from 'lucide-react'
 import ImageCard from '../components/ImageCard'
-import EditModal from '../components/EditModal'
 import CarSelector from '../components/CarSelector'
 import { Btn, Slider, Spinner, Card } from '../components/ui'
 
@@ -15,17 +14,17 @@ const OUTPUT_SIZES = [
 export default function StepReview({
   images, effectiveType, toggleType,
   processAll, reprocess, applyAdjustments, applyBlobSelection, removeImage,
-  stats, plateOptions, onNext, onBack
+  stats, plateOptions,
+  onEdit, onZoom,
+  onNext, onBack,
 }) {
   const stopRef  = useRef(false)
   const ranRef   = useRef(false)
 
-  const [editImg,       setEditImg]       = useState(null)
-  const [blobImg,       setBlobImg]       = useState(null) // imagen con múltiples autos
+  const [blobImg,       setBlobImg]       = useState(null)
   const [outputSize,    setOutputSize]    = useState('original')
   const [showBatch,     setShowBatch]     = useState(false)
 
-  // Batch adjustments state
   const [batchBrightness, setBatchBrightness] = useState(1)
   const [batchContrast,   setBatchContrast]   = useState(1)
   const [batchApplying,   setBatchApplying]   = useState(false)
@@ -38,7 +37,6 @@ export default function StepReview({
     : 0
   const canContinue = allDone && stats.done > 0
 
-  // Arrancar procesamiento al entrar
   useEffect(() => {
     if (!ranRef.current) {
       ranRef.current = true
@@ -47,25 +45,6 @@ export default function StepReview({
     }
   }, [])
 
-  // Sincronizar editImg con datos actualizados
-  useEffect(() => {
-    if (editImg) {
-      const updated = images.find(i => i.id === editImg.id)
-      if (updated) setEditImg(updated)
-    }
-  }, [images])
-
-  // Navegar entre imágenes desde el modal
-  const handleModalClose = useCallback((dir) => {
-    if (dir === 'prev' || dir === 'next') {
-      const idx  = images.findIndex(i => i.id === editImg?.id)
-      const next = dir === 'next' ? images[idx + 1] : images[idx - 1]
-      if (next) { setEditImg(next); return }
-    }
-    setEditImg(null)
-  }, [images, editImg])
-
-  // ── Aplicar ajustes a TODAS las imágenes procesadas ──────────────────────
   const applyBatchAdjustments = useCallback(async () => {
     const targets = images.filter(i => i.status === 'done' && i.cutoutB64)
     if (!targets.length) return
@@ -82,7 +61,7 @@ export default function StepReview({
     setBatchApplying(false)
   }, [images, applyAdjustments, batchBrightness, batchContrast])
 
-  const doneDone = images.filter(i => i.status === 'done').length
+  const doneDone  = images.filter(i => i.status === 'done').length
   const batchDirty = batchBrightness !== 1 || batchContrast !== 1 || outputSize !== 'original'
 
   return (
@@ -112,7 +91,7 @@ export default function StepReview({
         )}
       </Card>
 
-      {/* ── Chips de estado + selector de resolución ── */}
+      {/* ── Chips de estado ── */}
       <div className="flex items-center gap-2 flex-wrap">
         {stats.done > 0 && (
           <div className="text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md">
@@ -136,7 +115,7 @@ export default function StepReview({
         </div>
       </div>
 
-      {/* ── Panel de herramientas batch ── */}
+      {/* ── Panel de ajustes batch ── */}
       {allDone && doneDone > 1 && (
         <Card className="overflow-hidden">
           <button
@@ -159,10 +138,10 @@ export default function StepReview({
               {/* Tamaño de salida */}
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Resolución de salida</p>
-                <div className="flex bg-slate-100 p-0.5 rounded-lg gap-0.5 w-fit">
+                <div className="grid grid-cols-4 sm:flex bg-slate-100 p-0.5 rounded-lg gap-0.5 sm:w-fit">
                   {OUTPUT_SIZES.map(s => (
                     <button key={s.id} onClick={() => setOutputSize(s.id)}
-                      className={`px-3 py-1.5 text-[11px] font-semibold rounded-md transition-all
+                      className={`px-2 sm:px-3 py-2.5 sm:py-1.5 text-[11px] font-semibold rounded-md transition-all min-h-[40px] sm:min-h-0
                         ${outputSize === s.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
                       {s.label}
                     </button>
@@ -170,16 +149,16 @@ export default function StepReview({
                 </div>
               </div>
 
-              {/* Brillo */}
+              {/* Brillo — neutro en 0, rango -100..+100 */}
               <div className="flex items-center gap-3">
                 <Sun size={14} className="text-slate-400 flex-shrink-0" />
                 <div className="flex-1">
-                  <Slider label="Brillo global" value={Math.round((batchBrightness-0.5)*100)}
-                    min={-50} max={50} unit=""
-                    onChange={v => setBatchBrightness(+(0.5+v/100).toFixed(2))} />
+                  <Slider label="Brillo global" value={Math.round((batchBrightness-1)*100)}
+                    min={-100} max={100} unit=""
+                    onChange={v => setBatchBrightness(+(1+v/100).toFixed(2))} />
                 </div>
                 <span className="text-xs tabular-nums text-slate-400 w-8 text-right">
-                  {batchBrightness>1?'+':''}{Math.round((batchBrightness-1)*100)}
+                  {batchBrightness > 1 ? '+' : ''}{Math.round((batchBrightness-1)*100)}
                 </span>
               </div>
 
@@ -187,12 +166,12 @@ export default function StepReview({
               <div className="flex items-center gap-3">
                 <Contrast size={14} className="text-slate-400 flex-shrink-0" />
                 <div className="flex-1">
-                  <Slider label="Contraste global" value={Math.round((batchContrast-0.5)*100)}
-                    min={-50} max={50} unit=""
-                    onChange={v => setBatchContrast(+(0.5+v/100).toFixed(2))} />
+                  <Slider label="Contraste global" value={Math.round((batchContrast-1)*100)}
+                    min={-100} max={100} unit=""
+                    onChange={v => setBatchContrast(+(1+v/100).toFixed(2))} />
                 </div>
                 <span className="text-xs tabular-nums text-slate-400 w-8 text-right">
-                  {batchContrast>1?'+':''}{Math.round((batchContrast-1)*100)}
+                  {batchContrast > 1 ? '+' : ''}{Math.round((batchContrast-1)*100)}
                 </span>
               </div>
 
@@ -224,12 +203,13 @@ export default function StepReview({
         </Card>
       )}
 
-      {/* ── Info toque para editar ── */}
+      {/* ── Tip ── */}
       {allDone && stats.done > 0 && (
         <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3.5 py-2.5">
           <Settings2 size={13} className="text-slate-400 flex-shrink-0" />
           <p className="text-xs text-slate-500">
-            Tocá cualquier imagen para ajustar brillo, contraste, rotar o editar el recorte con pincel.
+            Tocá <strong>Editar</strong> en cualquier imagen para ajustar brillo, contraste, rotar o editar el recorte.
+            Tocá la imagen para ampliarla.
           </p>
         </div>
       )}
@@ -253,17 +233,17 @@ export default function StepReview({
               img={img}
               effectiveType={effectiveType}
               onToggleType={() => toggleType(img.id)}
-              onZoom={() => setEditImg(img)}
+              onZoom={onZoom}
+              onEdit={onEdit}
               onRemove={() => removeImage(img.id)}
               showResult
             />
-            {/* Badge múltiples autos */}
             {img.blobs?.length > 0 && img.status === 'done' && (
               <button
                 onClick={() => setBlobImg(img)}
                 className="absolute bottom-2 left-2 right-2 flex items-center justify-center gap-1
-                  bg-blue-700 hover:bg-blue-800 text-white text-[10px] font-bold
-                  px-2 py-1.5 rounded-md shadow-lg transition-colors z-10">
+                  bg-blue-700 hover:bg-blue-800 text-white text-[10px] font-bold min-h-[36px]
+                  px-2 py-2 rounded-md shadow-lg transition-colors z-10">
                 <Car size={10} /> {img.blobs.length + 1} autos — seleccionar
               </button>
             )}
@@ -276,24 +256,8 @@ export default function StepReview({
         <CarSelector
           cutoutB64={blobImg.cutoutB64}
           blobs={blobImg.blobs}
-          onSelect={(newB64) => {
-            applyBlobSelection(blobImg.id, newB64)
-            setBlobImg(null)
-          }}
+          onSelect={(newB64) => { applyBlobSelection(blobImg.id, newB64); setBlobImg(null) }}
           onCancel={() => setBlobImg(null)}
-        />
-      )}
-
-      {/* ── Modal de edición individual ── */}
-      {editImg && (
-        <EditModal
-          img={editImg}
-          images={images}
-          effectiveType={effectiveType}
-          onClose={handleModalClose}
-          onApply={applyAdjustments}
-          onReprocess={reprocess}
-          onToggleType={toggleType}
         />
       )}
 

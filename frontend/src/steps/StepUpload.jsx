@@ -1,18 +1,19 @@
 import { useState, useRef, useEffect } from 'react'
-import { UploadCloud, Plus, Scissors, EyeOff, Info, AlertTriangle, ShieldCheck, ChevronDown, ChevronUp, ImagePlus, X } from 'lucide-react'
+import { Camera, Images, Plus, Scissors, EyeOff, Info, AlertTriangle, ShieldCheck, ChevronDown, ChevronUp, ImagePlus, X } from 'lucide-react'
 import ImageCard from '../components/ImageCard'
 import { Btn } from '../components/ui'
 
 export default function StepUpload({ images, rejected, addFiles, toggleType, effectiveType, removeImage, onNext, stats, plateOptions, onPlateOptions }) {
-  const [dragging,       setDragging]       = useState(false)
-  const [plateOpen,      setPlateOpen]      = useState(false)
+  const [dragging,         setDragging]         = useState(false)
+  const [plateOpen,        setPlateOpen]        = useState(false)
   const [plateLogoPreview, setPlateLogoPreview] = useState(null)
   const inputRef      = useRef()
+  const cameraRef     = useRef()
   const plateLogoRef  = useRef()
 
   const canContinue = images.length > 0
 
-  // ── Drag & drop global ────────────────────────────────────────────────────
+  // ── Drag & drop global (desktop) ──────────────────────────────────────────
   useEffect(() => {
     const over  = e => { e.preventDefault(); setDragging(true) }
     const leave = e => { if (!e.relatedTarget) setDragging(false) }
@@ -31,155 +32,208 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
   }, [addFiles])
 
   return (
-    <div className="space-y-4 pb-24">
+    <div className="space-y-4 pb-32">
 
-      {/* ── Drop zone ── */}
-      <div
-        onClick={() => inputRef.current?.click()}
-        className={`cursor-pointer rounded-xl border-2 border-dashed transition-all
-          flex flex-col items-center justify-center text-center
-          ${dragging
-            ? 'border-blue-600 bg-blue-50'
-            : images.length > 0
-              ? 'border-slate-200 bg-white hover:border-slate-300 py-5'
+      {/* ── Inputs ocultos ── */}
+      {/* Galería / archivos */}
+      <input ref={inputRef} type="file"
+        accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+        multiple className="hidden"
+        onChange={e => addFiles(e.target.files)} />
+      {/* Cámara directa (solo mobile) */}
+      <input ref={cameraRef} type="file"
+        accept="image/*" capture="environment"
+        className="hidden"
+        onChange={e => addFiles(e.target.files)} />
+
+      {images.length === 0 ? (<>
+
+        {/* ══ MOBILE: botones grandes Cámara + Galería ══ */}
+        <div className={`sm:hidden rounded-2xl border-2 border-dashed transition-all
+          ${dragging ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}>
+          {dragging ? (
+            <div className="py-14 flex flex-col items-center gap-3">
+              <Images size={44} className="text-blue-500" strokeWidth={1.5} />
+              <p className="text-lg font-bold text-blue-700">Soltá las imágenes aquí</p>
+            </div>
+          ) : (
+            <div className="p-5 flex flex-col items-center gap-4">
+              <p className="text-base font-semibold text-slate-600 text-center">
+                ¿Cómo querés cargar las fotos?
+              </p>
+              <div className="w-full grid grid-cols-2 gap-3">
+                <button onClick={() => cameraRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-3 py-8 px-4
+                    bg-blue-700 text-white rounded-2xl active:scale-95 transition-all hover:bg-blue-800">
+                  <Camera size={36} strokeWidth={1.5} />
+                  <div className="text-center">
+                    <p className="font-bold text-base leading-tight">Cámara</p>
+                    <p className="text-xs text-blue-200 mt-0.5">Sacar foto ahora</p>
+                  </div>
+                </button>
+                <button onClick={() => inputRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-3 py-8 px-4
+                    bg-slate-100 text-slate-700 rounded-2xl active:scale-95 transition-all
+                    hover:bg-slate-200 border border-slate-200">
+                  <Images size={36} strokeWidth={1.5} className="text-slate-500" />
+                  <div className="text-center">
+                    <p className="font-bold text-base leading-tight">Galería</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Elegir del celular</p>
+                  </div>
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 text-center">JPG · PNG · WEBP</p>
+            </div>
+          )}
+        </div>
+
+        {/* ══ DESKTOP: drag & drop clásico ══ */}
+        <div
+          onClick={() => inputRef.current?.click()}
+          className={`hidden sm:flex cursor-pointer rounded-2xl border-2 border-dashed transition-all
+            flex-col items-center justify-center text-center
+            ${dragging
+              ? 'border-blue-500 bg-blue-50'
               : 'border-slate-300 bg-white hover:border-blue-400 py-16 px-8'
-          }`}
-      >
-        <input ref={inputRef} type="file"
-          accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
-          multiple className="hidden"
-          onChange={e => addFiles(e.target.files)} />
+            }`}>
+          {dragging ? (
+            <div className="py-14 flex flex-col items-center gap-3">
+              <Images size={48} className="text-blue-500" strokeWidth={1.5} />
+              <p className="text-xl font-bold text-blue-700">Soltá las imágenes aquí</p>
+            </div>
+          ) : (
+            <>
+              <Images size={48} className="text-slate-300 mb-4" strokeWidth={1.5} />
+              <p className="text-xl font-semibold text-slate-700 mb-1">
+                Arrastrá las imágenes aquí
+              </p>
+              <p className="text-sm text-slate-400 mb-8">
+                JPG · PNG · WEBP — múltiples archivos a la vez
+              </p>
+              <button
+                onClick={e => { e.stopPropagation(); inputRef.current?.click() }}
+                className="px-6 py-3 bg-blue-700 text-white rounded-xl font-semibold
+                  text-sm hover:bg-blue-800 transition-colors">
+                Seleccionar archivos
+              </button>
+            </>
+          )}
+        </div>
 
-        {dragging ? (
-          <div className="py-12 flex flex-col items-center gap-3">
-            <UploadCloud size={40} className="text-blue-600" strokeWidth={1.5} />
-            <p className="text-base font-semibold text-blue-700">Soltá las imágenes aquí</p>
+      </>) : (
+        /* ── Ya hay imágenes: zona compacta para agregar más ── */
+        <div className={`rounded-2xl border-2 border-dashed transition-all
+          ${dragging ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}>
+          <div className="flex items-center gap-3 px-4 py-3">
+            {/* Cámara — solo mobile */}
+            <button
+              onClick={() => cameraRef.current?.click()}
+              className="sm:hidden flex items-center gap-2 px-4 py-3 bg-blue-700 text-white
+                rounded-xl text-sm font-semibold active:scale-95 transition-all hover:bg-blue-800 min-h-[48px]">
+              <Camera size={18} />
+              <span>Cámara</span>
+            </button>
+            <button
+              onClick={() => inputRef.current?.click()}
+              className="flex items-center gap-2 px-4 py-3 bg-slate-100 text-slate-700
+                rounded-xl text-sm font-semibold active:scale-95 transition-all hover:bg-slate-200 min-h-[48px]">
+              <Plus size={18} />
+              <span className="sm:hidden">Galería</span>
+              <span className="hidden sm:inline">Agregar imágenes</span>
+            </button>
+            <span className="text-xs text-slate-400 ml-auto">
+              {stats.total} imagen{stats.total !== 1 ? 'es' : ''}
+            </span>
           </div>
-        ) : images.length > 0 ? (
-          <div className="flex items-center gap-2.5 px-4 py-3 text-slate-500">
-            <Plus size={16} strokeWidth={2} />
-            <span className="text-sm font-medium">Agregar más imágenes</span>
-          </div>
-        ) : (
-          <>
-            <UploadCloud size={44} className="text-slate-300 mb-4" strokeWidth={1.5} />
-            <p className="text-lg font-semibold text-slate-700 mb-1">
-              Arrastrá las imágenes aquí
-            </p>
-            <p className="text-sm text-slate-400 mb-7">
-              JPG · PNG · WEBP — múltiples archivos a la vez
-            </p>
-            <Btn variant="primary" className="pointer-events-none">
-              Seleccionar archivos
-            </Btn>
-          </>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* ── Opciones de procesamiento ── */}
-      <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+      {/* ── Opciones de matrícula ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
         <button
           onClick={() => setPlateOpen(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors">
-          <div className="flex items-center gap-2.5">
-            <ShieldCheck size={15} className={plateOptions.hidePlate ? 'text-blue-700' : 'text-slate-400'} />
-            <span className="text-sm font-semibold text-slate-700">Opciones de matrícula</span>
+          className="w-full flex items-center justify-between px-4 py-4 hover:bg-slate-50 transition-colors min-h-[56px]">
+          <div className="flex items-center gap-3">
+            <ShieldCheck size={18} className={plateOptions.hidePlate ? 'text-blue-700' : 'text-slate-400'} />
+            <span className="text-sm font-semibold text-slate-700">Tapar matrícula</span>
             {plateOptions.hidePlate && (
-              <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg">
                 Activo
               </span>
             )}
           </div>
-          {plateOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+          {plateOpen
+            ? <ChevronUp size={18} className="text-slate-400" />
+            : <ChevronDown size={18} className="text-slate-400" />}
         </button>
 
         {plateOpen && (
-          <div className="px-4 pb-4 border-t border-slate-100 pt-3 space-y-3">
-            <p className="text-xs text-slate-500">
-              Detecta y oculta automáticamente la matrícula al quitar el fondo.
+          <div className="px-4 pb-5 border-t border-slate-100 pt-4 space-y-4">
+            <p className="text-sm text-slate-500">
+              Detecta y tapa automáticamente la matrícula al quitar el fondo.
             </p>
 
-            {/* Toggle ocultar matrícula */}
             <label className="flex items-center gap-3 cursor-pointer select-none">
               <div className="relative">
                 <input type="checkbox" className="sr-only peer"
                   checked={plateOptions.hidePlate}
                   onChange={e => onPlateOptions({ ...plateOptions, hidePlate: e.target.checked })} />
-                <div className="w-10 h-6 bg-slate-200 rounded-full peer-checked:bg-blue-700
+                <div className="w-12 h-7 bg-slate-200 rounded-full peer-checked:bg-blue-700
                   after:content-[''] after:absolute after:top-1 after:left-1 after:bg-white
-                  after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+                  after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
               </div>
               <div>
-                <p className="text-sm font-medium text-slate-700">Ocultar matrícula automáticamente</p>
-                <p className="text-xs text-slate-400">Se detecta la chapa y se tapa con negro o tu logo</p>
+                <p className="text-sm font-semibold text-slate-700">Tapar matrícula automáticamente</p>
+                <p className="text-xs text-slate-400 mt-0.5">Se cubre con negro o con tu logo</p>
               </div>
             </label>
 
-            {/* Opciones de logo (solo cuando hidePlate=true) */}
             {plateOptions.hidePlate && (
-              <div className="pl-13 space-y-2 pt-1">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 ml-[52px]">Reemplazar con</p>
-                <div className="ml-[52px] space-y-2">
-                  {/* Opción: chapa negra */}
-                  <label className="flex items-center gap-2.5 cursor-pointer">
-                    <input type="radio" name="plateMode"
-                      checked={!plateOptions.plateLogoFile}
-                      onChange={() => {
-                        onPlateOptions({ ...plateOptions, plateLogoFile: null })
-                        setPlateLogoPreview(null)
-                      }}
-                      className="accent-blue-700" />
-                    <span className="text-sm text-slate-700">Chapa negra</span>
-                    <span className="inline-block w-12 h-4 rounded bg-black opacity-80" />
-                  </label>
+              <div className="space-y-3 pl-4 border-l-2 border-blue-100">
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Reemplazar con</p>
 
-                  {/* Opción: logo del dealer */}
-                  <label className="flex items-center gap-2.5 cursor-pointer">
-                    <input type="radio" name="plateMode"
-                      checked={!!plateOptions.plateLogoFile}
-                      onChange={() => plateLogoRef.current?.click()}
-                      className="accent-blue-700" />
-                    <span className="text-sm text-slate-700">Logo de mi automotora</span>
-                  </label>
+                <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
+                  <input type="radio" name="plateMode"
+                    checked={!plateOptions.plateLogoFile}
+                    onChange={() => { onPlateOptions({ ...plateOptions, plateLogoFile: null }); setPlateLogoPreview(null) }}
+                    className="accent-blue-700 w-4 h-4" />
+                  <span className="text-sm text-slate-700">Chapa negra</span>
+                  <span className="inline-block w-12 h-4 rounded bg-black opacity-80" />
+                </label>
 
-                  {/* Input oculto para el logo */}
-                  <input ref={plateLogoRef} type="file" accept="image/*" className="hidden"
-                    onChange={e => {
-                      const f = e.target.files[0]
-                      if (!f) return
-                      onPlateOptions({ ...plateOptions, plateLogoFile: f })
-                      const url = URL.createObjectURL(f)
-                      setPlateLogoPreview(url)
-                    }} />
+                <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
+                  <input type="radio" name="plateMode"
+                    checked={!!plateOptions.plateLogoFile}
+                    onChange={() => plateLogoRef.current?.click()}
+                    className="accent-blue-700 w-4 h-4" />
+                  <span className="text-sm text-slate-700">Logo de mi automotora</span>
+                </label>
 
-                  {/* Preview del logo cargado */}
-                  {plateLogoPreview && (
-                    <div className="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200 w-fit">
-                      <img src={plateLogoPreview} className="h-7 max-w-[80px] object-contain" alt="Logo" />
-                      <button
-                        onClick={() => {
-                          onPlateOptions({ ...plateOptions, plateLogoFile: null })
-                          setPlateLogoPreview(null)
-                        }}
-                        className="w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                        <X size={11} />
-                      </button>
-                    </div>
-                  )}
+                <input ref={plateLogoRef} type="file" accept="image/*" className="hidden"
+                  onChange={e => {
+                    const f = e.target.files[0]
+                    if (!f) return
+                    onPlateOptions({ ...plateOptions, plateLogoFile: f })
+                    setPlateLogoPreview(URL.createObjectURL(f))
+                  }} />
 
-                  {plateOptions.plateLogoFile && !plateLogoPreview && (
-                    <button onClick={() => plateLogoRef.current?.click()}
-                      className="flex items-center gap-1.5 text-xs text-blue-700 hover:underline">
-                      <ImagePlus size={12} /> Cargar logo
+                {plateLogoPreview && (
+                  <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-200 w-fit">
+                    <img src={plateLogoPreview} className="h-8 max-w-[80px] object-contain" alt="Logo" />
+                    <button
+                      onClick={() => { onPlateOptions({ ...plateOptions, plateLogoFile: null }); setPlateLogoPreview(null) }}
+                      className="w-7 h-7 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                      <X size={14} />
                     </button>
-                  )}
-                  {!plateOptions.plateLogoFile && plateOptions.hidePlate && (
-                    <button onClick={() => plateLogoRef.current?.click()}
-                      className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-700 transition-colors">
-                      <ImagePlus size={12} /> Cargar logo para usar en las chapas
-                    </button>
-                  )}
-                </div>
+                  </div>
+                )}
+
+                {!plateOptions.plateLogoFile && plateOptions.hidePlate && (
+                  <button onClick={() => plateLogoRef.current?.click()}
+                    className="flex items-center gap-2 text-sm text-slate-500 hover:text-blue-700 transition-colors min-h-[44px]">
+                    <ImagePlus size={16} /> Cargar logo para las chapas
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -188,46 +242,39 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
 
       {/* ── Archivos rechazados ── */}
       {rejected?.length > 0 && (
-        <div className="flex gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <AlertTriangle size={15} className="text-red-500 mt-0.5 flex-shrink-0" />
+        <div className="flex gap-3 bg-red-50 border border-red-200 rounded-2xl px-4 py-3.5">
+          <AlertTriangle size={18} className="text-red-500 mt-0.5 flex-shrink-0" />
           <div>
-            <p className="text-xs font-semibold text-red-700 mb-1">
-              {rejected.length} archivo{rejected.length !== 1 ? 's' : ''} no compatible{rejected.length !== 1 ? 's' : ''} — solo se aceptan JPG, PNG y WEBP
+            <p className="text-sm font-semibold text-red-700 mb-1">
+              {rejected.length} archivo{rejected.length !== 1 ? 's' : ''} no compatible{rejected.length !== 1 ? 's' : ''} — solo JPG, PNG y WEBP
             </p>
-            <p className="text-[11px] text-red-500 leading-relaxed">
-              {rejected.join(' · ')}
-            </p>
+            <p className="text-xs text-red-500 leading-relaxed">{rejected.join(' · ')}</p>
           </div>
         </div>
       )}
 
-      {/* ── Grid ── */}
+      {/* ── Grid de imágenes ── */}
       {images.length > 0 && (
         <>
-          {/* Counters */}
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-md">
-              <Scissors size={11} strokeWidth={2} /> {stats.exterior} con recorte
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-700 bg-blue-50 px-2.5 py-1.5 rounded-lg">
+              <Scissors size={12} strokeWidth={2} /> {stats.exterior} con recorte
             </div>
             {stats.interior > 0 && (
-              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1 rounded-md">
-                <EyeOff size={11} strokeWidth={2} /> {stats.interior} sin recorte
+              <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 bg-slate-100 px-2.5 py-1.5 rounded-lg">
+                <EyeOff size={12} strokeWidth={2} /> {stats.interior} sin recorte
               </div>
             )}
-            <span className="text-xs text-slate-400 ml-auto">{stats.total} imagen{stats.total !== 1 ? 'es' : ''}</span>
           </div>
 
-          {/* Info acción */}
-          <div className="flex gap-2.5 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-            <Info size={15} className="text-slate-400 mt-0.5 flex-shrink-0" strokeWidth={2} />
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Por defecto se quitará el fondo a todas las imágenes.
-              Si hay fotos de interior (tablero, asientos) que no querés recortar, tocá <span className="font-semibold text-slate-700">No recortar</span> en cada una.
+          <div className="flex gap-2.5 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3.5">
+            <Info size={16} className="text-slate-400 mt-0.5 flex-shrink-0" strokeWidth={2} />
+            <p className="text-sm text-slate-500 leading-relaxed">
+              Se quitará el fondo a todas las fotos. Si alguna es interior, tocá <span className="font-semibold text-slate-700">No quitar fondo</span> en esa imagen.
             </p>
           </div>
 
-          {/* Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {images.map(img => (
               <ImageCard
                 key={img.id}
@@ -241,16 +288,13 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
         </>
       )}
 
-      {/* ── Sticky bar ── */}
+      {/* ── Sticky bottom bar ── */}
       {images.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200
-          px-4 py-3 pb-safe">
-          <div className="max-w-2xl mx-auto flex gap-2">
-            <Btn variant="secondary" onClick={() => inputRef.current?.click()}>
-              <Plus size={15} /> Agregar
-            </Btn>
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm
+          border-t border-slate-200 px-4 py-4 pb-safe">
+          <div className="max-w-2xl mx-auto">
             <Btn variant="primary" size="full" onClick={onNext} disabled={!canContinue}>
-              Continuar — procesar {stats.exterior} imagen{stats.exterior !== 1 ? 'es' : ''}
+              Procesar {stats.exterior} imagen{stats.exterior !== 1 ? 'es' : ''} →
             </Btn>
           </div>
         </div>

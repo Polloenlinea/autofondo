@@ -52,7 +52,7 @@ export async function adjustImage(cutoutB64, { brightness, contrast, rotation })
   return res.json()
 }
 
-export async function composeImage({ cutoutB64, bgFile, preset, scale, posX, posY, shadow }) {
+export async function composeImage({ cutoutB64, bgFile, preset, scale, posX, posY, shadow, reflection }) {
   const form = new FormData()
   form.append('car', b64ToBlob(cutoutB64, 'image/png'), 'car.png')
   if (bgFile)  form.append('background', bgFile)
@@ -61,6 +61,7 @@ export async function composeImage({ cutoutB64, bgFile, preset, scale, posX, pos
   form.append('pos_x',  posX)
   form.append('pos_y',  posY)
   form.append('shadow', shadow)
+  form.append('reflection', !!reflection)
   const res = await apiFetch(`${BASE}/compose`, { method: 'POST', body: form })
   return res.json()
 }

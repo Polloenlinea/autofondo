@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Download, Archive, RotateCcw, Lock, Upload, Globe, Save, Check } from 'lucide-react'
+import { Download, Archive, RotateCcw, Lock, Upload, Globe, Save, Check, Pencil, ZoomIn, Share2 } from 'lucide-react'
 import JSZip from 'jszip'
 import { Btn, Card, SectionLabel, Spinner } from '../components/ui'
 import WatermarkPanel from '../components/WatermarkPanel'
@@ -12,11 +12,12 @@ const DEFAULT_WM = {
 }
 
 const SYSTEMS = [
-  { id: 'usados', label: 'Sistema de Usados',             icon: Upload, color: 'text-blue-400' },
-  { id: 'web',    label: 'Publicador Multiplataforma',    icon: Globe,  color: 'text-violet-400' },
+  { id: 'usados',  label: 'Sistema de Usados', shortLabel: 'Usados', icon: Upload, color: 'text-blue-400'   },
+  { id: 'web',     label: 'Multipost',         shortLabel: 'Multipost', icon: Globe,  color: 'text-violet-400' },
+  { id: 'social',  label: 'Redes sociales',    shortLabel: 'Redes', icon: Share2, color: 'text-pink-400'   },
 ]
 
-export default function StepExport({ images, effectiveType, outputSize, onBack, onReset, saveSession }) {
+export default function StepExport({ images, effectiveType, outputSize, onEdit, onZoom, onBack, onReset, saveSession }) {
   const [wm,          setWm]          = useState(DEFAULT_WM)
   const [downloading, setDownloading] = useState(false)
   const [dlProgress,  setDlProgress]  = useState(0)
@@ -123,10 +124,28 @@ export default function StepExport({ images, effectiveType, outputSize, onBack, 
           const src  = imgSrc(img)
           const mime = imgMime(img)
           return (
-            <div key={img.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <div className={`aspect-[4/3] overflow-hidden relative ${img.composedB64 ? 'bg-slate-100' : 'checker'}`}>
+            <div key={img.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden group">
+              <div className={`aspect-[4/3] overflow-hidden relative ${img.composedB64 ? 'bg-slate-100' : 'checker'}
+                ${onZoom ? 'cursor-zoom-in' : ''}`}
+                onClick={onZoom ? () => onZoom(img.id) : undefined}>
                 <img src={`data:image/${mime};base64,${src}`}
                   className="w-full h-full object-contain" />
+                {/* Hover overlay */}
+                {onZoom && (
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors
+                    flex items-end justify-between p-1.5 pointer-events-none">
+                    <ZoomIn size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                    {onEdit && (
+                      <button
+                        onClick={e => { e.stopPropagation(); onEdit(img.id) }}
+                        className="pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity
+                          flex items-center gap-1 px-2 py-1 bg-blue-700 text-white rounded-md
+                          text-[10px] font-semibold hover:bg-blue-800 shadow-md">
+                        <Pencil size={9} /> Editar
+                      </button>
+                    )}
+                  </div>
+                )}
                 {wm.enabled && wm.logoUrl && (
                   <img src={wm.logoUrl}
                     style={{
@@ -149,12 +168,13 @@ export default function StepExport({ images, effectiveType, outputSize, onBack, 
 
                 <button onClick={() => downloadOne(img)}
                   className="flex items-center justify-center gap-1.5 w-full text-xs font-medium
-                    text-slate-700 bg-slate-50 hover:bg-slate-100 py-1.5 rounded-lg transition-colors
-                    border border-slate-200">
+                    text-slate-700 bg-slate-50 hover:bg-slate-100 py-2.5 sm:py-1.5 rounded-lg transition-colors
+                    border border-slate-200 min-h-[40px] sm:min-h-0">
                   <Download size={11} /> Descargar
                 </button>
 
-                <div className="flex gap-1">
+                {/* Sistemas externos por imagen — solo desktop, en mobile ya están en la barra inferior */}
+                <div className="hidden sm:flex gap-1">
                   {SYSTEMS.map(sys => (
                     <button key={sys.id} disabled
                       title={`${sys.label} — próximamente`}
@@ -162,7 +182,7 @@ export default function StepExport({ images, effectiveType, outputSize, onBack, 
                         border border-slate-100 bg-slate-50 cursor-not-allowed">
                       <sys.icon size={10} className={`${sys.color} opacity-50`} />
                       <span className="text-[10px] text-slate-400 font-medium">
-                        {sys.id === 'usados' ? 'Usados' : 'Web'}
+                        {sys.id === 'usados' ? 'Usados' : sys.id === 'web' ? 'Web' : 'Redes'}
                       </span>
                       <Lock size={8} className="text-slate-300" />
                     </button>
@@ -193,28 +213,34 @@ export default function StepExport({ images, effectiveType, outputSize, onBack, 
               : <><Archive size={14} /> Descargar todo ({processedImages.length}){wm.enabled ? ' + logo' : ''}</>}
           </Btn>
 
-          {/* Fila secundaria: guardar lote + sistemas futuros */}
-          <div className="flex gap-2">
-            <Btn variant="secondary" onClick={() => setShowSaveModal(true)}>
-              <Save size={14} /> Guardar lote
-            </Btn>
+          {/* Guardar lote — fila propia, ancho completo en mobile */}
+          <Btn variant="secondary" size="full" className="sm:w-auto" onClick={() => setShowSaveModal(true)}>
+            <Save size={14} /> Guardar lote
+          </Btn>
+
+          {/* Sistemas externos — fila propia en grilla pareja, nunca se aprietan */}
+          <div className="grid grid-cols-3 gap-2">
             {SYSTEMS.map(sys => (
               <button key={sys.id} disabled
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl
+                title={`${sys.label} — próximamente`}
+                className="flex items-center justify-center gap-1 py-2.5 rounded-xl min-h-[44px]
                   border border-slate-200 bg-slate-50 cursor-not-allowed">
-                <sys.icon size={12} className={`${sys.color} opacity-50`} />
-                <span className="text-xs font-medium text-slate-400 hidden sm:inline">{sys.label}</span>
-                <Lock size={9} className="text-slate-300" />
+                <sys.icon size={13} className={`${sys.color} opacity-50 flex-shrink-0`} />
+                <span className="text-[11px] font-medium text-slate-400 truncate">
+                  <span className="sm:hidden">{sys.shortLabel}</span>
+                  <span className="hidden sm:inline">{sys.label}</span>
+                </span>
+                <Lock size={9} className="text-slate-300 flex-shrink-0" />
               </button>
             ))}
           </div>
 
           {/* Fila navegación */}
           <div className="flex items-center gap-2">
-            <Btn variant="secondary" onClick={onBack}>
+            <Btn variant="secondary" className="flex-1" onClick={onBack}>
               ← Volver a Fondos
             </Btn>
-            <Btn variant="ghost" size="full" onClick={onReset}>
+            <Btn variant="ghost" className="flex-1" onClick={onReset}>
               <RotateCcw size={13} /> Nuevo lote
             </Btn>
           </div>

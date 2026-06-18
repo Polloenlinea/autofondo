@@ -1,10 +1,25 @@
-const { ImageAnnotatorClient } = require('@google-cloud/vision')
 const sharp = require('sharp')
 
+// Vision API es opcional — si no hay credenciales configuradas, el censado se omite
 let _client = null
-function getClient() {
-  if (!_client) _client = new ImageAnnotatorClient()
-  return _client
+let _visionAvailable = null  // null = no chequeado aún
+
+async function getClient() {
+  if (_visionAvailable === false) return null
+  if (_client) return _client
+  try {
+    const { ImageAnnotatorClient } = require('@google-cloud/vision')
+    _client = new ImageAnnotatorClient()
+    // Forzar resolución de credenciales ahora para fallar rápido y controlado
+    await _client.auth.getClient()
+    _visionAvailable = true
+    return _client
+  } catch (err) {
+    console.warn('[plateCensor] Vision API no disponible (sin credenciales) — censado de matrícula desactivado')
+    _visionAvailable = false
+    _client = null
+    return null
+  }
 }
 
 // ── Homografía pura JS ────────────────────────────────────────────────────────
@@ -69,7 +84,8 @@ const PLATE_RE_CLEAN = /^([A-Z]{2,4}\d{3,4}[A-Z]{0,2}|\d{3,4}[A-Z]{2,4}|[A-Z]{3}
 
 async function detectPlatePoly(imageBuffer) {
   try {
-    const client = getClient()
+    const client = await getClient()
+    if (!client) return null
     const [result] = await client.textDetection({
       image: { content: imageBuffer.toString('base64') },
     })

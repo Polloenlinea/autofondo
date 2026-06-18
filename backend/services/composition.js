@@ -52,10 +52,52 @@ async function generatePresetBg(preset, w = 1920, h = 1080) {
   return makeGradient(w, h, stops)
 }
 
+/** Umbral de relación ancho/alto a partir del cual un auto se considera "horizontal" (foto de perfil) */
+const HORIZONTAL_RATIO = 1.4
+
+/**
+ * Determina si un recorte de auto es lo suficientemente horizontal como para
+ * que un reflejo tenga sentido visual (fotos de 3/4 o frontales quedan raras).
+ */
+async function isHorizontal(carBuffer) {
+  const meta = await sharp(carBuffer).metadata()
+  return (meta.width / meta.height) >= HORIZONTAL_RATIO
+}
+
+/**
+ * Genera el buffer PNG de un reflejo (auto espejado verticalmente, con
+ * degradado de opacidad) listo para componer con blend "multiply".
+ */
+async function buildReflection(carResizedBuffer, nw, nh, maxHeight) {
+  const reflectH = Math.max(1, Math.min(Math.round(nh * 0.45), maxHeight))
+  if (reflectH < 4) return null
+
+  // Espejar verticalmente y quedarnos solo con la franja que vamos a usar
+  const flipped = await sharp(carResizedBuffer).flip()
+    .extract({ left: 0, top: 0, width: nw, height: reflectH })
+    .toBuffer()
+
+  const alphaBuf = await sharp(flipped).extractChannel(3).raw().toBuffer()
+
+  // Degradado: más visible pegado al auto, se desvanece hacia abajo
+  const reflRGBA = Buffer.from(await sharp(flipped).ensureAlpha().raw().toBuffer())
+  for (let yy = 0; yy < reflectH; yy++) {
+    const t = yy / Math.max(1, reflectH - 1)
+    const fade = Math.max(0, 1 - t) ** 1.6
+    const opacity = fade * 0.32 // tope de opacidad del reflejo
+    for (let xx = 0; xx < nw; xx++) {
+      const idx = (yy * nw + xx) * 4
+      reflRGBA[idx + 3] = Math.round(reflRGBA[idx + 3] * opacity)
+    }
+  }
+
+  return sharp(reflRGBA, { raw: { width: nw, height: reflectH, channels: 4 } }).png().toBuffer()
+}
+
 /**
  * Compone un auto (RGBA) sobre un fondo
  */
-async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow }) {
+async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflection }) {
   const bgMeta  = await sharp(bgBuffer).metadata()
   const carMeta = await sharp(carBuffer).metadata()
 
@@ -112,6 +154,21 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow }) {
     } catch { /* shadow opcional */ }
   }
 
+  if (reflection) {
+    try {
+      const maxHeight = bgMeta.height - (y + nh)
+      const reflPng = await buildReflection(carResized, nw, nh, maxHeight)
+      if (reflPng) {
+        composites.push({
+          input: reflPng,
+          left: x,
+          top:  y + nh,
+          blend: 'multiply',
+        })
+      }
+    } catch { /* reflejo opcional */ }
+  }
+
   composites.push({ input: carResized, left: x, top: y })
 
   return sharp(bgBuffer)
@@ -120,4 +177,4 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow }) {
     .toBuffer()
 }
 
-module.exports = { generatePresetBg, compose }
+module.exports = { generatePresetBg, compose, isHorizontal }

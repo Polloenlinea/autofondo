@@ -1,19 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { ImagePlus, X, RefreshCw, Check, ChevronDown, ChevronUp, AlertCircle, Trash2 } from 'lucide-react'
+import { ImagePlus, X, RefreshCw, Check, ChevronDown, ChevronUp, AlertCircle, Pencil, ZoomIn } from 'lucide-react'
 import { Btn, Slider, Toggle, Card, SectionLabel, Spinner } from '../components/ui'
 import { composeImage } from '../services/api'
 import { useBgHistory } from '../hooks/useBgHistory'
-
-const PRESETS = [
-  { id: 'white',  label: 'Blanco',     style: { background: '#fff', border: '1px solid #e2e8f0' } },
-  { id: 'gray',   label: 'Gris',       style: { background: '#ecf0f3' } },
-  { id: 'dark',   label: 'Oscuro',     style: { background: '#0f172a' } },
-  { id: 'forest', label: 'Bosque',     style: { background: 'linear-gradient(to bottom, #388e3c, #1b5e20)' } },
-  { id: 'sky',    label: 'Cielo',      style: { background: 'linear-gradient(to bottom, #38bdf8, #075985)' } },
-  { id: 'city',   label: 'Ciudad',     style: { background: 'linear-gradient(to bottom, #172554, #0a0f1e)' } },
-  { id: 'sunset', label: 'Atardecer',  style: { background: 'linear-gradient(to bottom, #581c87, #be185d, #ea580c)' } },
-  { id: 'sand',   label: 'Playa',      style: { background: 'linear-gradient(to bottom, #7d91aa, #c2a06e)' } },
-]
+import { BG_PRESETS } from '../constants/bgPresets'
 
 function useDebounce(value, delay) {
   const [dv, setDv] = useState(value)
@@ -24,14 +14,19 @@ function useDebounce(value, delay) {
   return dv
 }
 
-export default function StepBackground({ images, effectiveType, setComposed, onNext, onBack }) {
+export default function StepBackground({
+  images, effectiveType, setComposed, stats,
+  onEdit, onZoom,
+  onNext, onBack,
+}) {
   const [preset,       setPreset]       = useState('white')
   const [customFile,   setCustomFile]   = useState(null)
   const [customUrl,    setCustomUrl]    = useState(null)
   const [scale,   setScale]   = useState(80)
   const [posX,    setPosX]    = useState(50)
   const [posY,    setPosY]    = useState(60)
-  const [shadow,  setShadow]  = useState(true)
+  const [shadow,     setShadow]     = useState(true)
+  const [reflection, setReflection] = useState(false)
   const [applying,      setApplying]      = useState(false)
   const [progress,      setProgress]      = useState(0)
   const [composeError,  setComposeError]  = useState(null)
@@ -44,13 +39,15 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
   const exteriorDone  = images.filter(i => effectiveType(i) === 'exterior' && i.status === 'done')
   const composedCount = images.filter(i => i.composedB64).length
   const hasBg = preset || customFile
+  // El reflejo solo tiene sentido visual en fotos de perfil (auto horizontal)
+  const anyHorizontal = exteriorDone.some(i => i.horizontal)
 
-  const dScale  = useDebounce(scale,  700)
-  const dPosX   = useDebounce(posX,   700)
-  const dPosY   = useDebounce(posY,   700)
-  const dShadow = useDebounce(shadow, 700)
+  const dScale      = useDebounce(scale,      700)
+  const dPosX       = useDebounce(posX,       700)
+  const dPosY       = useDebounce(posY,       700)
+  const dShadow     = useDebounce(shadow,     700)
+  const dReflection = useDebounce(reflection, 700)
 
-  // ── Auto-aplicar al cambiar parámetros o al llegar nuevas imágenes ──────
   const exteriorIds = exteriorDone.map(i => i.id).join(',')
 
   useEffect(() => {
@@ -59,7 +56,7 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
     const snap = {
       imgs: [...exteriorDone],
       bgFile: customFile, preset: customFile ? null : preset,
-      scale: dScale, posX: dPosX, posY: dPosY, shadow: dShadow,
+      scale: dScale, posX: dPosX, posY: dPosY, shadow: dShadow, reflection: dReflection,
     }
 
     const myToken = ++applyToken.current
@@ -73,22 +70,26 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
       for (const img of snap.imgs) {
         if (applyToken.current !== myToken) break
         if (!img.cutoutB64) { done++; continue }
+        const imgReflection = snap.reflection && img.horizontal
         try {
           const res = await composeImage({
             cutoutB64: img.cutoutB64,
             bgFile: snap.bgFile, preset: snap.preset,
             scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: snap.shadow,
+            reflection: imgReflection,
           })
           if (applyToken.current !== myToken) break
           if (res.ok) {
-            setComposed(img.id, res.image)
+            setComposed(img.id, res.image, {
+              bgFile: snap.bgFile, preset: snap.preset,
+              scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: snap.shadow,
+              reflection: imgReflection,
+            })
           } else {
-            console.error('[compose] API error:', res.error)
             if (applyToken.current === myToken)
               setComposeError(res.error || 'Error al aplicar el fondo')
           }
         } catch (err) {
-          console.error('[compose] fetch error:', err?.message)
           if (applyToken.current === myToken)
             setComposeError('Error de conexión: ' + (err?.message || 'desconocido'))
         }
@@ -99,41 +100,40 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
       if (applyToken.current === myToken) setApplying(false)
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dScale, dPosX, dPosY, dShadow, preset, customFile, exteriorIds])
+  }, [dScale, dPosX, dPosY, dShadow, dReflection, preset, customFile, exteriorIds])
 
-  // ── Forzar re-aplicar ────────────────────────────────────────────────────
   const applyAll = useCallback(async () => {
     ++applyToken.current
     const token = applyToken.current
     setApplying(true); stopRef.current = false; setProgress(0); setComposeError(null)
+    const bgCfgBase = {
+      bgFile: customFile, preset: customFile ? null : preset,
+      scale, posX, posY, shadow,
+    }
     let done = 0
     for (const img of exteriorDone) {
       if (stopRef.current || token !== applyToken.current) break
       if (!img.cutoutB64) { done++; continue }
+      const cfg = { ...bgCfgBase, reflection: reflection && img.horizontal }
       try {
-        const res = await composeImage({
-          cutoutB64: img.cutoutB64,
-          bgFile: customFile, preset: customFile ? null : preset,
-          scale, posX, posY, shadow,
-        })
+        const res = await composeImage({ cutoutB64: img.cutoutB64, ...cfg })
         if (res.ok) {
-          setComposed(img.id, res.image)
+          setComposed(img.id, res.image, cfg)
         } else {
-          console.error('[applyAll] API error:', res.error)
           setComposeError(res.error || 'Error del servidor')
         }
       } catch (err) {
-        console.error('[applyAll] fetch error:', err?.message)
         setComposeError('Error de conexión: ' + (err?.message || 'desconocido'))
       }
       done++
       setProgress(Math.round(done / exteriorDone.length * 100))
     }
     setApplying(false)
-  }, [exteriorDone, customFile, preset, scale, posX, posY, shadow, setComposed])
+  }, [exteriorDone, customFile, preset, scale, posX, posY, shadow, reflection, setComposed])
 
   const selectPreset = (id) => { setPreset(id); setCustomFile(null); setCustomUrl(null) }
 
+  // Thumb con botones de zoom y editar al hacer hover
   const ComposedThumb = ({ img }) => {
     const isInterior = effectiveType(img) !== 'exterior' || img.status === 'skipped'
     const src = img.composedB64
@@ -144,7 +144,7 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
 
     const bgClass = img.composedB64 ? 'bg-slate-100' : img.cutoutB64 ? 'checker' : 'bg-slate-100'
     return (
-      <div className={`relative rounded-xl overflow-hidden aspect-[4/3] ${bgClass}`}>
+      <div className={`relative rounded-xl overflow-hidden aspect-[4/3] group ${bgClass}`}>
         <img src={src} className="w-full h-full object-contain" />
 
         {applying && !isInterior && !img.composedB64 && (
@@ -163,6 +163,29 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
           <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-green-500 rounded-full
             flex items-center justify-center shadow-sm">
             <Check size={10} className="text-white" />
+          </div>
+        )}
+
+        {/* Botones hover (no mostrar en interiores) */}
+        {!isInterior && (
+          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-end justify-between p-1.5 gap-1">
+            {onZoom && (
+              <button
+                onClick={() => onZoom(img.id)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity
+                  w-7 h-7 bg-black/60 text-white rounded-md flex items-center justify-center hover:bg-black/80">
+                <ZoomIn size={13} />
+              </button>
+            )}
+            {onEdit && (img.composedB64 || img.cutoutB64) && (
+              <button
+                onClick={() => onEdit(img.id)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity
+                  flex items-center gap-1 px-2 py-1 bg-blue-700 text-white rounded-md
+                  text-[10px] font-semibold hover:bg-blue-800 shadow-md ml-auto">
+                <Pencil size={9} /> Editar
+              </button>
+            )}
           </div>
         )}
 
@@ -193,7 +216,7 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
             <div>
               <SectionLabel>Fondo</SectionLabel>
               <div className="grid grid-cols-4 gap-2 mb-2">
-                {PRESETS.map(p => (
+                {BG_PRESETS.map(p => (
                   <button key={p.id} onClick={() => selectPreset(p.id)}
                     className={`relative h-12 rounded-lg transition-all border-2
                       ${preset === p.id && !customFile
@@ -267,7 +290,6 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
                             <p className="text-[9px] text-white truncate">{bg.name}</p>
                           </div>
                         </button>
-                        {/* Botón eliminar */}
                         <button
                           onClick={e => { e.stopPropagation(); deleteBg(bg._id) }}
                           className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full
@@ -304,6 +326,9 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
               <Slider label="Posición horizontal" value={posX}  min={0}  max={100} unit="%" onChange={setPosX} />
               <Slider label="Posición vertical"   value={posY}  min={0}  max={100} unit="%" onChange={setPosY} />
               <Toggle label="Sombra bajo el auto" value={shadow} onChange={setShadow} />
+              {anyHorizontal && (
+                <Toggle label="Reflejo (autos de perfil)" value={reflection} onChange={setReflection} />
+              )}
             </div>
           </div>
         )}
@@ -317,8 +342,7 @@ export default function StepBackground({ images, effectiveType, setComposed, onN
             <p className="text-xs font-semibold text-red-700 mb-0.5">Error al aplicar el fondo</p>
             <p className="text-[11px] text-red-500 break-words">{composeError}</p>
           </div>
-          <button onClick={() => setComposeError(null)}
-            className="text-red-400 hover:text-red-600 flex-shrink-0">
+          <button onClick={() => setComposeError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0">
             <X size={13} />
           </button>
         </div>

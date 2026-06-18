@@ -1,15 +1,15 @@
-// ─── Primitivos de UI — diseño profesional ──────────────────────────────────
+// ─── Primitivos de UI ────────────────────────────────────────────────────────
 
 export function Btn({ children, onClick, disabled, variant = 'primary', size = 'md', className = '', type = 'button' }) {
-  const base = 'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all select-none text-sm tracking-wide'
+  const base = 'inline-flex items-center justify-center gap-2 font-semibold rounded-xl transition-all select-none tracking-wide active:scale-[0.97]'
   const sizes = {
-    sm:   'px-3 py-1.5 text-xs',
-    md:   'px-4 py-2.5',
-    lg:   'px-5 py-3 text-base',
-    full: 'w-full px-4 py-3',
+    sm:   'px-3 py-2 text-xs min-h-[36px]',
+    md:   'px-5 py-3 text-sm min-h-[48px]',
+    lg:   'px-6 py-4 text-base min-h-[56px]',
+    full: 'w-full px-5 py-4 text-base min-h-[56px]',
   }
   const variants = {
-    primary:   'bg-blue-700 text-white hover:bg-blue-800 active:bg-blue-900 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed',
+    primary:   'bg-blue-700 text-white hover:bg-blue-800 active:bg-blue-900 disabled:bg-slate-200 disabled:text-slate-400 disabled:cursor-not-allowed disabled:active:scale-100',
     secondary: 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 active:bg-slate-100 disabled:opacity-40',
     ghost:     'text-slate-500 hover:text-slate-700 hover:bg-slate-100 active:bg-slate-200 disabled:opacity-40',
     danger:    'bg-red-600 text-white hover:bg-red-700 active:bg-red-800',
@@ -31,7 +31,8 @@ export function Slider({ label, value, min, max, unit = '', onChange }) {
         <span className="text-sm font-semibold text-blue-700 tabular-nums w-12 text-right">{value}{unit}</span>
       </div>
       <input type="range" min={min} max={max} value={value}
-        onChange={e => onChange(+e.target.value)} />
+        onChange={e => onChange(+e.target.value)}
+        className="w-full h-2 accent-blue-700" />
     </div>
   )
 }
@@ -44,10 +45,10 @@ export function Toggle({ label, value, onChange }) {
         role="switch"
         aria-checked={value}
         onClick={() => onChange(!value)}
-        className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0
+        className={`relative w-12 h-7 rounded-full transition-colors flex-shrink-0
           ${value ? 'bg-blue-700' : 'bg-slate-300'}`}
       >
-        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow-sm
+        <span className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full shadow-sm
           transition-transform duration-200 ${value ? 'translate-x-5' : ''}`} />
       </button>
       {label && <span className="text-sm text-slate-700 font-medium">{label}</span>}
