@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Backend — Node.js
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Montevideo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "backend"
+    ignore:
+      # multer@2 tiene breaking changes — revisar manualmente antes de mergear
+      - dependency-name: "multer"
+        update-types: ["version-update:semver-major"]
+
+  # Frontend — Node.js
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Montevideo"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
