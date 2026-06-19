@@ -77,8 +77,6 @@ async function buildReflection(carResizedBuffer, nw, nh, maxHeight) {
     .extract({ left: 0, top: 0, width: nw, height: reflectH })
     .toBuffer()
 
-  const alphaBuf = await sharp(flipped).extractChannel(3).raw().toBuffer()
-
   // Degradado: más visible pegado al auto, se desvanece hacia abajo
   const reflRGBA = Buffer.from(await sharp(flipped).ensureAlpha().raw().toBuffer())
   for (let yy = 0; yy < reflectH; yy++) {
