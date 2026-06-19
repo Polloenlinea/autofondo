@@ -1,6 +1,0 @@
-fastapi
-uvicorn[standard]
-rembg
-pillow
-numpy
-python-multipart
