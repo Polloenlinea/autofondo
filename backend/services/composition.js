@@ -82,15 +82,19 @@ async function buildReflection(carResizedBuffer, nw, nh, contentBottom, maxHeigh
 
   // Espejar verticalmente y arrancar desde el borde inferior REAL del auto
   // (no desde el borde del canvas, que puede tener relleno transparente debajo)
-  const flipTop = nh - 1 - contentBottom
+  // flipTop nunca puede ser negativo — clampear a 0
+  const flipTop = Math.max(0, nh - 1 - contentBottom)
+  const safeH   = Math.min(reflectH, nh - flipTop)
+  if (safeH < 4) return null
+
   const flipped = await sharp(carResizedBuffer).flip()
-    .extract({ left: 0, top: flipTop, width: nw, height: reflectH })
+    .extract({ left: 0, top: flipTop, width: nw, height: safeH })
     .toBuffer()
 
   // Degradado: más visible pegado al auto, se desvanece hacia abajo
   const reflRGBA = Buffer.from(await sharp(flipped).ensureAlpha().raw().toBuffer())
-  for (let yy = 0; yy < reflectH; yy++) {
-    const t = yy / Math.max(1, reflectH - 1)
+  for (let yy = 0; yy < safeH; yy++) {
+    const t = yy / Math.max(1, safeH - 1)
     const fade = Math.max(0, 1 - t) ** 1.6
     const opacity = fade * 0.32 // tope de opacidad del reflejo
     for (let xx = 0; xx < nw; xx++) {
@@ -99,7 +103,7 @@ async function buildReflection(carResizedBuffer, nw, nh, contentBottom, maxHeigh
     }
   }
 
-  return sharp(reflRGBA, { raw: { width: nw, height: reflectH, channels: 4 } }).png().toBuffer()
+  return sharp(reflRGBA, { raw: { width: nw, height: safeH, channels: 4 } }).png().toBuffer()
 }
 
 /**
@@ -168,19 +172,23 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
 
         const shadowH  = Math.max(8, Math.round(nh * 0.12))
         const blurAmt  = Math.max(3, Math.round(nw * 0.025))
-        // sharp expande a 3 canales internamente al pasar por resize+blur — forzar
-        // de vuelta a escala de grises de 1 canal o el buffer crudo queda desalineado
+        // sharp puede devolver 1 o 3 canales tras resize+blur según la versión/plataforma.
+        // Usar grayscale() es más fiable que toColourspace('b-w') para forzar 1 canal.
         const squashed = await sharp(footBuf, { raw: { width: nw, height: footH, channels: 1 } })
           .resize(nw, shadowH, { fit: 'fill' })
           .blur(blurAmt)
-          .toColourspace('b-w')
+          .grayscale()
           .raw().toBuffer()
+
+        // Detectar stride real (1 o 3 canales) por el tamaño del buffer
+        const expectedPx = nw * shadowH
+        const stride = squashed.length >= expectedPx * 3 ? 3 : 1
 
         // RGBA negro con alpha = degradado de opacidad — blend "over" (no "multiply": ese modo
         // produce bandeado visible en degradados suaves sobre fondos lisos en sharp/libvips)
         const shadowRGBA = Buffer.alloc(nw * shadowH * 4)
-        for (let i = 0; i < nw * shadowH; i++) {
-          shadowRGBA[i * 4 + 3] = Math.min(255, Math.round(squashed[i] * 0.45))
+        for (let i = 0; i < expectedPx; i++) {
+          shadowRGBA[i * 4 + 3] = Math.min(255, Math.round(squashed[i * stride] * 0.45))
         }
         const shadowPng = await sharp(shadowRGBA, { raw: { width: nw, height: shadowH, channels: 4 } })
           .png().toBuffer()
