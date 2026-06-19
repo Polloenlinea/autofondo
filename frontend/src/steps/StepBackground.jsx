@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { ImagePlus, X, RefreshCw, Check, ChevronDown, ChevronUp, AlertCircle, Pencil, ZoomIn } from 'lucide-react'
+import { ImagePlus, X, RefreshCw, Check, ChevronDown, ChevronUp, AlertCircle, Pencil } from 'lucide-react'
 import { Btn, Slider, Toggle, Card, SectionLabel, Spinner } from '../components/ui'
 import { composeImage } from '../services/api'
 import { useBgHistory } from '../hooks/useBgHistory'
@@ -133,7 +133,7 @@ export default function StepBackground({
 
   const selectPreset = (id) => { setPreset(id); setCustomFile(null); setCustomUrl(null) }
 
-  // Thumb con botones de zoom y editar al hacer hover
+  // Thumb: imagen arriba (click = zoom) + acciones siempre visibles abajo, sin superposiciones
   const ComposedThumb = ({ img }) => {
     const isInterior = effectiveType(img) !== 'exterior' || img.status === 'skipped'
     const src = img.composedB64
@@ -143,54 +143,47 @@ export default function StepBackground({
         : img.previewUrl
 
     const bgClass = img.composedB64 ? 'bg-slate-100' : img.cutoutB64 ? 'checker' : 'bg-slate-100'
+    const canEdit = onEdit && !isInterior && (img.composedB64 || img.cutoutB64)
+
     return (
-      <div className={`relative rounded-xl overflow-hidden aspect-[4/3] group ${bgClass}`}>
-        <img src={src} className="w-full h-full object-contain" />
+      <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+        <div className={`relative aspect-[4/3] ${bgClass} ${onZoom ? 'cursor-zoom-in' : ''}`}
+          onClick={onZoom ? () => onZoom(img.id) : undefined}>
+          <img src={src} className="w-full h-full object-contain" />
 
-        {applying && !isInterior && !img.composedB64 && (
-          <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-            <Spinner size="sm" color="text-blue-700" />
-          </div>
-        )}
+          {applying && !isInterior && !img.composedB64 && (
+            <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+              <Spinner size="sm" color="text-blue-700" />
+            </div>
+          )}
 
-        {isInterior && (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-            <span className="text-white text-[10px] font-semibold bg-black/60 px-2 py-1 rounded-md">Interior</span>
-          </div>
-        )}
+          {isInterior && (
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+              <span className="text-white text-[10px] font-semibold bg-black/60 px-2 py-1 rounded-md">Interior</span>
+            </div>
+          )}
 
-        {img.composedB64 && !isInterior && (
-          <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-green-500 rounded-full
-            flex items-center justify-center shadow-sm">
-            <Check size={10} className="text-white" />
-          </div>
-        )}
+          {img.composedB64 && !isInterior && (
+            <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-green-500 rounded-full
+              flex items-center justify-center shadow-sm">
+              <Check size={10} className="text-white" />
+            </div>
+          )}
+        </div>
 
-        {/* Botones hover (no mostrar en interiores) */}
-        {!isInterior && (
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-end justify-between p-1.5 gap-1">
-            {onZoom && (
-              <button
-                onClick={() => onZoom(img.id)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity
-                  w-7 h-7 bg-black/60 text-white rounded-md flex items-center justify-center hover:bg-black/80">
-                <ZoomIn size={13} />
-              </button>
-            )}
-            {onEdit && (img.composedB64 || img.cutoutB64) && (
-              <button
-                onClick={() => onEdit(img.id)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity
-                  flex items-center gap-1 px-2 py-1 bg-blue-700 text-white rounded-md
-                  text-[10px] font-semibold hover:bg-blue-800 shadow-md ml-auto">
-                <Pencil size={9} /> Editar
-              </button>
-            )}
-          </div>
-        )}
-
-        <p className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent
-          text-white text-[10px] px-2 py-1.5 truncate">{img.file.name}</p>
+        {/* Footer — acciones siempre visibles, nada escondido detrás de un hover */}
+        <div className="px-2 py-2 space-y-1.5">
+          {canEdit && (
+            <button
+              onClick={() => onEdit(img.id)}
+              className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg
+                text-[11px] font-semibold transition-colors min-h-[36px]
+                bg-blue-700 text-white hover:bg-blue-800 active:bg-blue-900">
+              <Pencil size={11} /> Editar
+            </button>
+          )}
+          <p className="text-[11px] text-slate-400 truncate px-1">{img.file.name}</p>
+        </div>
       </div>
     )
   }

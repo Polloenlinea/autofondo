@@ -64,18 +64,6 @@ export default function ImageCard({
           </button>
         )}
 
-        {/* Botón editar — siempre visible en mobile cuando hay resultado */}
-        {onEdit && canInteract && resultB64 && (
-          <button
-            onClick={e => { e.stopPropagation(); onEdit(img.id) }}
-            className="absolute bottom-2 right-2 flex items-center gap-1.5 px-3 py-1.5
-              bg-blue-700 text-white rounded-xl text-xs font-semibold
-              sm:opacity-0 sm:group-hover:opacity-100 active:bg-blue-800 shadow-md"
-          >
-            <Pencil size={11} /> Editar
-          </button>
-        )}
-
         {/* Badge sin recorte */}
         {img.status === 'skipped' && (
           <div className="absolute top-2 right-2">
@@ -86,8 +74,19 @@ export default function ImageCard({
         )}
       </div>
 
-      {/* ── Footer ── */}
-      <div className="px-2 py-2">
+      {/* ── Footer — acciones siempre visibles, nada escondido detrás de un hover ── */}
+      <div className="px-2 py-2 space-y-1.5">
+        {onEdit && canInteract && resultB64 && (
+          <button
+            onClick={() => onEdit(img.id)}
+            className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg
+              text-[11px] font-semibold transition-colors min-h-[36px]
+              bg-blue-700 text-white hover:bg-blue-800 active:bg-blue-900"
+          >
+            <Pencil size={11} /> Editar
+          </button>
+        )}
+
         {onToggleType ? (
           <button
             onClick={onToggleType}
