@@ -148,6 +148,7 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
   let alphaBuf = null
   if (shadow || reflection) {
     alphaBuf = await sharp(carBuffer).resize(nw, nh).extractChannel(3).raw().toBuffer()
+    console.log(`[compose] alphaBuf.length=${alphaBuf.length} expected=${nw*nh} (${alphaBuf.length === nw*nh ? '1ch OK' : alphaBuf.length === nw*nh*3 ? '3ch!' : 'UNEXPECTED'})`)
     outer:
     for (let yy = nh - 1; yy >= 0; yy--) {
       const rowStart = yy * nw
@@ -155,6 +156,7 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
         if (alphaBuf[rowStart + xx] > 15) { contentBottom = yy; break outer }
       }
     }
+    console.log(`[compose] canvas=${nw}x${nh} contentBottom=${contentBottom} x=${x} y=${y}`)
   }
 
   if (shadow && contentBottom >= 0) {
@@ -183,9 +185,10 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
         // Detectar stride real (1 o 3 canales) por el tamaño del buffer
         const expectedPx = nw * shadowH
         const stride = squashed.length >= expectedPx * 3 ? 3 : 1
+        const sampleAlphas = Array.from({length: 5}, (_, i) => squashed[Math.floor(i * expectedPx / 5) * stride])
+        console.log(`[compose:shadow] footH=${footH} shadowH=${shadowH} blurAmt=${blurAmt} squashed.len=${squashed.length} stride=${stride} sampleAlphas=${sampleAlphas} maxFinalAlpha=${Math.round(Math.max(...sampleAlphas)*0.45)}`)
 
-        // RGBA negro con alpha = degradado de opacidad — blend "over" (no "multiply": ese modo
-        // produce bandeado visible en degradados suaves sobre fondos lisos en sharp/libvips)
+        // RGBA negro con alpha = degradado de opacidad
         const shadowRGBA = Buffer.alloc(nw * shadowH * 4)
         for (let i = 0; i < expectedPx; i++) {
           shadowRGBA[i * 4 + 3] = Math.min(255, Math.round(squashed[i * stride] * 0.45))
@@ -198,6 +201,7 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
           Math.max(0, y + contentBottom - Math.round(shadowH * 0.5)),
           bgMeta.height - shadowH
         )
+        console.log(`[compose:shadow] placed at left=${x} top=${shadowTop} size=${nw}x${shadowH} bg=${bgMeta.width}x${bgMeta.height}`)
         composites.push({
           input: shadowPng,
           left:  x,
@@ -211,6 +215,7 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
   if (reflection && contentBottom >= 0) {
     try {
       const maxHeight = bgMeta.height - (y + contentBottom + 1)
+      console.log(`[compose:reflection] contentBottom=${contentBottom} maxHeight=${maxHeight} reflTop=${y+contentBottom+1}`)
       const reflPng = await buildReflection(carResized, nw, nh, contentBottom, maxHeight)
       if (reflPng) {
         composites.push({
@@ -220,7 +225,7 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
           blend: 'multiply',
         })
       }
-    } catch { /* reflejo opcional */ }
+    } catch (e) { console.warn('[compose:reflection] error:', e.message) }
   }
 
   composites.push({ input: carResized, left: x, top: y })
