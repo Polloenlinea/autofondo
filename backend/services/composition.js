@@ -90,19 +90,30 @@ async function buildReflection(carResizedBuffer, nw, nh, contentBottom, maxHeigh
     .extract({ left: 0, top: flipTop, width: nw, height: safeH })
     .toBuffer()
 
-  // Degradado: más visible pegado al auto, se desvanece hacia abajo
+  // Degradado de opacidad:
+  // — Las primeras filas (pegadas al auto) arrancan suave para eliminar la línea de seam.
+  // — Sube rápido a la opacidad máxima y luego desvanece hacia abajo.
+  // — Opacidad máxima 42%: visible sin ser exagerado.
+  const easeInRows = Math.max(2, Math.round(safeH * 0.08)) // ~8% del alto para el fade-in
   const reflRGBA = Buffer.from(await sharp(flipped).ensureAlpha().raw().toBuffer())
   for (let yy = 0; yy < safeH; yy++) {
     const t = yy / Math.max(1, safeH - 1)
-    const fade = Math.max(0, 1 - t) ** 1.6
-    const opacity = fade * 0.32 // tope de opacidad del reflejo
+    // Fade-out: de lleno a transparente de arriba hacia abajo
+    const fadeOut = Math.max(0, 1 - t) ** 1.6
+    // Ease-in suave en las primeras filas para eliminar la línea de corte
+    const easeIn = yy < easeInRows ? (yy / easeInRows) ** 0.5 : 1
+    const opacity = fadeOut * easeIn * 0.42
     for (let xx = 0; xx < nw; xx++) {
       const idx = (yy * nw + xx) * 4
       reflRGBA[idx + 3] = Math.round(reflRGBA[idx + 3] * opacity)
     }
   }
 
-  return sharp(reflRGBA, { raw: { width: nw, height: safeH, channels: 4 } }).png().toBuffer()
+  // Blur vertical suave para eliminar cualquier artefacto de borde remanente
+  const blurR = Math.max(1, Math.round(Math.min(nw, safeH) * 0.008))
+  return sharp(reflRGBA, { raw: { width: nw, height: safeH, channels: 4 } })
+    .blur(blurR)
+    .png().toBuffer()
 }
 
 /**
@@ -199,14 +210,16 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
 
   if (reflection && contentBottom >= 0) {
     try {
-      const maxHeight = bgMeta.height - (y + contentBottom + 1)
+      // Solapar 1px con el borde del auto para evitar la línea de corte visible
+      const reflTop   = y + contentBottom
+      const maxHeight = bgMeta.height - reflTop
       const reflPng = await buildReflection(carResized, nw, nh, contentBottom, maxHeight)
       if (reflPng) {
         composites.push({
           input: reflPng,
           left: x,
-          top:  y + contentBottom + 1,
-          blend: 'over',  // 'multiply' queda invisible en fondos oscuros
+          top:  Math.max(0, reflTop),
+          blend: 'over',
         })
       }
     } catch (e) { console.warn('[compose:reflection] error:', e.message) }
