@@ -74,15 +74,14 @@ async function isHorizontal(carBuffer) {
 
 /**
  * Genera el buffer PNG de un reflejo (auto espejado verticalmente, con
- * degradado de opacidad) listo para componer con blend "multiply".
+ * degradado de opacidad) listo para componer con blend "over".
  */
 async function buildReflection(carResizedBuffer, nw, nh, contentBottom, maxHeight) {
   const reflectH = Math.max(1, Math.min(Math.round(nh * 0.45), maxHeight, contentBottom + 1))
   if (reflectH < 4) return null
 
-  // Espejar verticalmente y arrancar desde el borde inferior REAL del auto
-  // (no desde el borde del canvas, que puede tener relleno transparente debajo)
-  // flipTop nunca puede ser negativo — clampear a 0
+  // Espejar verticalmente arrancando desde el borde inferior REAL del auto.
+  // flipTop nunca puede ser negativo — clampear a 0.
   const flipTop = Math.max(0, nh - 1 - contentBottom)
   const safeH   = Math.min(reflectH, nh - flipTop)
   if (safeH < 4) return null
@@ -142,13 +141,11 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
   const composites = []
 
   // El cutout suele traer relleno transparente arriba/abajo dentro del canvas —
-  // hay que encontrar el borde inferior REAL del auto (no asumir que es nh-1),
-  // tanto para la sombra de contacto como para el reflejo.
+  // hay que encontrar el borde inferior REAL del auto para anclar sombra y reflejo.
   let contentBottom = -1
   let alphaBuf = null
   if (shadow || reflection) {
     alphaBuf = await sharp(carBuffer).resize(nw, nh).extractChannel(3).raw().toBuffer()
-    console.log(`[compose] alphaBuf.length=${alphaBuf.length} expected=${nw*nh} (${alphaBuf.length === nw*nh ? '1ch OK' : alphaBuf.length === nw*nh*3 ? '3ch!' : 'UNEXPECTED'})`)
     outer:
     for (let yy = nh - 1; yy >= 0; yy--) {
       const rowStart = yy * nw
@@ -156,73 +153,60 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
         if (alphaBuf[rowStart + xx] > 15) { contentBottom = yy; break outer }
       }
     }
-    console.log(`[compose] canvas=${nw}x${nh} contentBottom=${contentBottom} x=${x} y=${y}`)
   }
 
-  if (shadow && contentBottom >= 0) {
+  if (shadow) {
     try {
-      // Sombra de CONTACTO: tomamos solo la franja donde el auto realmente "toca el piso",
-      // la aplastamos verticalmente y la difuminamos — no la silueta completa desplazada
-      // (que queda tapada detrás del auto y resulta invisible).
-      {
-        const footH   = Math.max(4, Math.min(contentBottom + 1, Math.round(nh * 0.20)))
-        const footTop = contentBottom - footH + 1
-        const footBuf = Buffer.alloc(nw * footH)
-        for (let yy = 0; yy < footH; yy++) {
-          alphaBuf.copy(footBuf, yy * nw, (footTop + yy) * nw, (footTop + yy + 1) * nw)
-        }
+      // ── Sombra difusa clásica de fotografía de producto ────────────────────────
+      // Silueta completa del auto, muy difuminada, colocada justo debajo del auto.
+      // Funciona bien en fondos claros y oscuros. Visualmente similar a Adobe
+      // Photoshop "Drop Shadow" con distancia corta y spread grande.
+      const blurRadius = Math.max(8, Math.round(Math.min(nw, nh) * 0.04))
 
-        const shadowH  = Math.max(8, Math.round(nh * 0.12))
-        const blurAmt  = Math.max(3, Math.round(nw * 0.025))
-        // sharp puede devolver 1 o 3 canales tras resize+blur según la versión/plataforma.
-        // Usar grayscale() es más fiable que toColourspace('b-w') para forzar 1 canal.
-        const squashed = await sharp(footBuf, { raw: { width: nw, height: footH, channels: 1 } })
-          .resize(nw, shadowH, { fit: 'fill' })
-          .blur(blurAmt)
-          .grayscale()
-          .raw().toBuffer()
+      // extractChannel puede devolver 1 o 3 bytes/pixel según la versión de sharp —
+      // detectar el stride real midiendo el buffer.
+      const alphaStride = (alphaBuf && alphaBuf.length >= nw * nh * 3) ? 3 : 1
+      const alphaSource = alphaBuf || await sharp(carBuffer).resize(nw, nh).extractChannel(3).raw().toBuffer()
+      const actualStride = alphaBuf ? alphaStride : (alphaSource.length >= nw * nh * 3 ? 3 : 1)
 
-        // Detectar stride real (1 o 3 canales) por el tamaño del buffer
-        const expectedPx = nw * shadowH
-        const stride = squashed.length >= expectedPx * 3 ? 3 : 1
-        const sampleAlphas = Array.from({length: 5}, (_, i) => squashed[Math.floor(i * expectedPx / 5) * stride])
-        console.log(`[compose:shadow] footH=${footH} shadowH=${shadowH} blurAmt=${blurAmt} squashed.len=${squashed.length} stride=${stride} sampleAlphas=${sampleAlphas} maxFinalAlpha=${Math.round(Math.max(...sampleAlphas)*0.45)}`)
-
-        // RGBA negro con alpha = degradado de opacidad
-        const shadowRGBA = Buffer.alloc(nw * shadowH * 4)
-        for (let i = 0; i < expectedPx; i++) {
-          shadowRGBA[i * 4 + 3] = Math.min(255, Math.round(squashed[i * stride] * 0.45))
-        }
-        const shadowPng = await sharp(shadowRGBA, { raw: { width: nw, height: shadowH, channels: 4 } })
-          .png().toBuffer()
-
-        // Apoyada en el borde inferior REAL del auto, con leve superposición
-        const shadowTop = Math.min(
-          Math.max(0, y + contentBottom - Math.round(shadowH * 0.5)),
-          bgMeta.height - shadowH
-        )
-        console.log(`[compose:shadow] placed at left=${x} top=${shadowTop} size=${nw}x${shadowH} bg=${bgMeta.width}x${bgMeta.height}`)
-        composites.push({
-          input: shadowPng,
-          left:  x,
-          top:   shadowTop,
-          blend: 'over',
-        })
+      // Construir RGBA negro donde alpha = silueta del auto
+      const silhouetteRGBA = Buffer.alloc(nw * nh * 4)
+      for (let i = 0; i < nw * nh; i++) {
+        silhouetteRGBA[i * 4 + 3] = alphaSource[i * actualStride]
       }
-    } catch { /* shadow opcional */ }
+
+      // Difuminar la silueta
+      const silhouettePng = await sharp(silhouetteRGBA, { raw: { width: nw, height: nh, channels: 4 } })
+        .blur(blurRadius)
+        .png().toBuffer()
+
+      // Escalar opacidad al 65% máximo — visible y natural, sin aplastar el fondo
+      const { data: blurredPx, info: blurInfo } = await sharp(silhouettePng)
+        .ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+      for (let i = 3; i < blurredPx.length; i += 4) {
+        blurredPx[i] = Math.round(blurredPx[i] * 0.65)
+      }
+      const shadowPng = await sharp(blurredPx, {
+        raw: { width: blurInfo.width, height: blurInfo.height, channels: 4 }
+      }).png().toBuffer()
+
+      // Pequeño desplazamiento hacia abajo para dar sensación de elevación del auto
+      const shadowOffsetY = Math.max(4, Math.round(nh * 0.025))
+      const shadowTop = Math.min(Math.max(0, y + shadowOffsetY), bgMeta.height - nh)
+      composites.push({ input: shadowPng, left: x, top: shadowTop, blend: 'over' })
+    } catch (e) { console.warn('[compose:shadow] error:', e.message) }
   }
 
   if (reflection && contentBottom >= 0) {
     try {
       const maxHeight = bgMeta.height - (y + contentBottom + 1)
-      console.log(`[compose:reflection] contentBottom=${contentBottom} maxHeight=${maxHeight} reflTop=${y+contentBottom+1}`)
       const reflPng = await buildReflection(carResized, nw, nh, contentBottom, maxHeight)
       if (reflPng) {
         composites.push({
           input: reflPng,
           left: x,
           top:  y + contentBottom + 1,
-          blend: 'multiply',
+          blend: 'over',  // 'multiply' queda invisible en fondos oscuros
         })
       }
     } catch (e) { console.warn('[compose:reflection] error:', e.message) }
