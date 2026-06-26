@@ -4,10 +4,16 @@ const upload   = require('../../middleware/upload')
 const { detectImageType }            = require('../../services/detection')
 const { removeBg }                   = require('../../services/bgRemoval')
 const { censorPlate, applyPlateCensor } = require('../../services/plateCensor')
-const { compose, generatePresetBg, isLevel } = require('../../services/composition')
+const { compose, generatePresetBg, isLevel, applyRadialBlur } = require('../../services/composition')
 const { photoroomShadow } = require('../../services/photoroomShadow')
 const { photoroomScene }  = require('../../services/photoroomScene')
+const { briaShadow } = require('../../services/briaShadow')
+const { briaScene }  = require('../../services/briaScene')
 const usage = require('../../services/usage')
+
+// Motor de IA para fondos y sombra: 'bria' (más real + barato) | 'photoroom'.
+// Cambiar por env AI_ENGINE para volver atrás sin tocar código.
+const AI_ENGINE = (process.env.AI_ENGINE || 'bria').toLowerCase()
 const { applyAdjustments, resizeOutput } = require('../../services/adjustments')
 const Session    = require('../../models/Session')
 const BgHistory  = require('../../models/BgHistory')
@@ -116,11 +122,11 @@ router.post('/compose', upload.fields([
     if (bgPrompt) {
       const seed          = req.body.seed || null
       const guidanceFile  = req.files?.guidance?.[0]
-      const scene = await photoroomScene(carFile.buffer, bgPrompt, {
-        upscale, relight, seed, guidanceBuffer: guidanceFile?.buffer || null,
-      })
+      const scene = AI_ENGINE === 'bria'
+        ? await briaScene(carFile.buffer, bgPrompt, { seed })
+        : await photoroomScene(carFile.buffer, bgPrompt, { upscale, relight, seed, guidanceBuffer: guidanceFile?.buffer || null })
       if (!scene) {
-        return res.status(502).json({ ok: false, error: 'No se pudo generar el fondo IA (revisá el cupo/plan de Photoroom)' })
+        return res.status(502).json({ ok: false, error: `No se pudo generar el fondo IA (revisá el cupo/plan de ${AI_ENGINE})` })
       }
       return res.json({ ok: true, image: scene.toString('base64') })
     }
@@ -137,22 +143,27 @@ router.post('/compose', upload.fields([
     let carBuffer  = carFile.buffer
     let shadow     = req.body.shadow === 'true'
     let reflection = req.body.reflection === 'true'
+    // ai_shadow = usar la sombra PAGA por IA (Bria/Photoroom). Si es false pero se
+    // pidió shadow, la sombra la dibuja compose() GRATIS (interna). Esto evita
+    // gastar créditos en el preview inicial: solo se paga cuando el usuario aplica
+    // su fondo final con sombra IA.
+    const aiShadow = req.body.ai_shadow === 'true'
 
-    // Edición por IA (Photoroom): sombra apoyada + (opcional) upscale/relight,
-    // todo sobre transparente, usado como capa del auto. Una sola llamada cubre
-    // las tres cosas. Si la API falla y se pidió sombra, caemos a la interna.
-    if (shadow || upscale || relight) {
+    if (aiShadow && (shadow || upscale || relight)) {
       const mode = ['ai.soft', 'ai.hard', 'ai.floating'].includes(req.body.shadow_mode)
         ? req.body.shadow_mode : 'ai.soft'
-      const edited = await photoroomShadow(carFile.buffer, { mode, withShadow: shadow, upscale, relight })
+      const edited = AI_ENGINE === 'bria'
+        ? await briaShadow(carFile.buffer, { type: 'regular' })
+        : await photoroomShadow(carFile.buffer, { mode, withShadow: shadow, upscale, relight })
       if (edited) {
-        carBuffer = edited        // auto editado (con sombra horneada si withShadow)
+        carBuffer = edited        // auto editado (con sombra horneada)
         if (shadow) {
-          shadow     = false      // sombra ya horneada → no aplicar la interna
-          reflection = false      // evitar reflejar la sombra (se mezclarían mal)
+          shadow     = false      // sombra IA ya horneada → no aplicar la interna
+          reflection = false
         }
       }
     }
+    // Si shadow sigue true acá (no se horneó por IA), compose() la dibuja GRATIS.
 
     const result = await compose({
       carBuffer,

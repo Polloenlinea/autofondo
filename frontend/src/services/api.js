@@ -53,7 +53,7 @@ export async function adjustImage(cutoutB64, { brightness, contrast, rotation })
   return res.json()
 }
 
-export async function composeImage({ cutoutB64, bgFile, preset, bgPrompt, seed, guidanceB64, scale, posX, posY, shadow, reflection, shadowIntensity, reflectionIntensity, upscale, relight }) {
+export async function composeImage({ cutoutB64, bgFile, preset, bgPrompt, seed, guidanceB64, scale, posX, posY, shadow, aiShadow, reflection, shadowIntensity, reflectionIntensity, upscale, relight }) {
   const form = new FormData()
   form.append('car', b64ToBlob(cutoutB64, 'image/png'), 'car.png')
   if (upscale) form.append('upscale', 'true')
@@ -73,6 +73,7 @@ export async function composeImage({ cutoutB64, bgFile, preset, bgPrompt, seed, 
   form.append('pos_x',  posX)
   form.append('pos_y',  posY)
   form.append('shadow', shadow)
+  form.append('ai_shadow', !!aiShadow)   // sombra PAGA por IA (solo al aplicar final)
   form.append('reflection', !!reflection)
   form.append('shadow_intensity',     shadowIntensity     ?? 100)
   form.append('reflection_intensity', reflectionIntensity ?? 100)

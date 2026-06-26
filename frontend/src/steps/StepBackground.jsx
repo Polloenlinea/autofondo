@@ -46,7 +46,7 @@ export default function StepBackground({
   const [scale,   setScale]   = useState(80)
   const [posX,    setPosX]    = useState(50)
   const [posY,    setPosY]    = useState(60)
-  const [shadow,     setShadow]     = useState(true)
+  const [shadow,     setShadow]     = useState(false)   // OFF por defecto (no gasta IA)
   const [shadowIntensity,     setShadowIntensity]     = useState(100)
   // Mejoras IA (viajan en la misma llamada a Photoroom, sin costo extra)
   const [upscale, setUpscale] = useState(false)
@@ -121,6 +121,7 @@ export default function StepBackground({
             cutoutB64: img.cutoutB64,
             bgFile: snap.bgFile, preset: snap.preset,
             scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: imgShadow,
+            aiShadow: false,   // preview inicial: sombra GRATIS (no gasta IA)
             shadowIntensity: snap.shadowIntensity,
             upscale: snap.upscale, relight: snap.relight,
           })
@@ -170,7 +171,7 @@ export default function StepBackground({
       if (!img.cutoutB64) { done++; continue }
       const cfg = useAi
         ? { bgPrompt: aiPrompt, upscale, relight, seed, guidanceB64 }
-        : { ...bgCfgBase, shadow }
+        : { ...bgCfgBase, shadow, aiShadow: shadow }   // al aplicar: sombra IA paga (la buena)
       try {
         const res = await composeWithRetry({ cutoutB64: img.cutoutB64, ...cfg })
         if (res.ok) {
@@ -470,12 +471,22 @@ export default function StepBackground({
               <Slider label="Tamaño del auto"     value={scale} min={10} max={120} unit="%" onChange={setScale} />
               <Slider label="Posición horizontal" value={posX}  min={0}  max={100} unit="%" onChange={setPosX} />
               <Slider label="Posición vertical"   value={posY}  min={0}  max={100} unit="%" onChange={setPosY} />
-              <Toggle label="Sombra bajo el auto" value={shadow} onChange={setShadow} />
+              <Toggle label="Sombra realista (IA)" value={shadow} onChange={setShadow} />
               {shadow && (
-                <Slider label="Intensidad de la sombra" value={shadowIntensity} min={0} max={100} unit="%" onChange={setShadowIntensity} />
+                <>
+                  <Slider label="Intensidad de la sombra" value={shadowIntensity} min={0} max={100} unit="%" onChange={setShadowIntensity} />
+                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertCircle size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                    <p className="text-[11px] text-amber-700 leading-snug">
+                      La sombra realista tiene un <b>costo</b>. Si después aplicás un <b>fondo inteligente (IA)</b>,
+                      ese ya trae su propia sombra → pagarías <b>dos veces</b>. Para fondo IA, dejá la sombra apagada acá.
+                    </p>
+                  </div>
+                </>
               )}
             </div>
             )}
+
           </div>
         )}
       </Card>

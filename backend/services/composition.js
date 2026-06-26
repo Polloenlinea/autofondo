@@ -82,8 +82,8 @@ async function generatePresetBg(preset, w = 1920, h = 1080) {
 
   const solids = {
     white:  [{ pos:0, r:255,g:255,b:255 }, { pos:1, r:255,g:255,b:255 }],
-    // Gris plano, un poco más oscuro que el original (#ecf0f3)
-    gray:   [{ pos:0, r:214,g:219,b:224 }, { pos:1, r:214,g:219,b:224 }],
+    // Gris plano por defecto (un poco más oscuro, #c6ccd3) — look más de estudio
+    gray:   [{ pos:0, r:198,g:204,b:211 }, { pos:1, r:198,g:204,b:211 }],
     dark:   [{ pos:0, r:15, g:23, b:42  }, { pos:1, r:15, g:23, b:42  }],
   }
   const gradients = {
@@ -210,6 +210,41 @@ async function findMainBlob(carBuffer, nw, nh) {
       return labels[ty * targetW + tx] === bestLabel
     },
   }
+}
+
+/**
+ * Desenfoque RADIAL (tipo profundidad de campo / tilt-shift): deja NÍTIDO el centro
+ * (donde está el auto) y va desenfocando hacia los bordes/esquinas. Disimula lo
+ * "generado" del fondo y le da aire de foto con lente real. Gratis (local).
+ * @param {Buffer} buffer  imagen compuesta (jpeg/png)
+ * @param {number} strength 0-1 intensidad del desenfoque en los bordes
+ */
+async function applyRadialBlur(buffer, strength = 0.6) {
+  const meta = await sharp(buffer).metadata()
+  const W = meta.width, H = meta.height
+  const sigma = Math.max(1, 18 * Math.max(0, Math.min(1, strength)))   // fuerza del blur en bordes
+  // versión desenfocada (RGB raw)
+  const blur = await sharp(buffer).blur(sigma).removeAlpha().toColourspace('srgb').raw().toBuffer()
+  // máscara radial → alpha del overlay desenfocado: 0 (nítido) en el centro, sube a
+  // 255 hacia las esquinas. inner=donde empieza a desenfocar, outer=máximo.
+  const cx = W / 2, cy = H / 2
+  const maxR = Math.sqrt(cx * cx + cy * cy)
+  const inner = 0.45, outer = 1.0   // 0..1 respecto del radio a la esquina
+  const rgba = Buffer.alloc(W * H * 4)
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x
+      const d = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) / maxR
+      let t = (d - inner) / (outer - inner)
+      t = t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t)   // smoothstep
+      rgba[i * 4]     = blur[i * 3]
+      rgba[i * 4 + 1] = blur[i * 3 + 1]
+      rgba[i * 4 + 2] = blur[i * 3 + 2]
+      rgba[i * 4 + 3] = Math.round(t * 255)
+    }
+  }
+  const overlay = await sharp(rgba, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer()
+  return sharp(buffer).composite([{ input: overlay, left: 0, top: 0 }]).jpeg({ quality: 92 }).toBuffer()
 }
 
 /**
@@ -378,4 +413,4 @@ async function compose({ carBuffer, bgBuffer, scale, posX, posY, shadow, reflect
     .toBuffer()
 }
 
-module.exports = { generatePresetBg, compose, isLevel }
+module.exports = { generatePresetBg, compose, isLevel, applyRadialBlur }

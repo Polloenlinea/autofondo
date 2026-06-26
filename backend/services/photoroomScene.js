@@ -75,7 +75,10 @@ async function photoroomScene(cutoutBuffer, prompt, { upscale = false, relight =
       form.append('background.prompt', clean)
       form.append('shadow.mode', 'ai.soft')   // sombra apoyada dentro de la escena
       if (useUpscale && upscale) form.append('upscale.mode', 'ai.fast')
-      if (relight)               form.append('lighting.mode', 'ai.auto')
+      // Relight SIEMPRE en escenas: integra la luz del auto con el fondo generado →
+      // más realista (que el auto "pertenezca" a la escena). Es parte de la misma
+      // llamada, sin costo extra.
+      form.append('lighting.mode', 'ai.auto')
       // Consistencia entre fotos del mismo auto
       if (seed != null && seed !== '') form.append('background.seed', String(seed))
       if (guidanceBuffer) {
@@ -92,7 +95,12 @@ async function photoroomScene(cutoutBuffer, prompt, { upscale = false, relight =
       form.append('margin', '0')
       return fetch('https://image-api.photoroom.com/v2/edit', {
         method: 'POST',
-        headers: { 'x-api-key': key, Accept: 'image/png' },
+        headers: {
+          'x-api-key': key,
+          Accept: 'image/png',
+          // Modelo de fondo IA más nuevo (más realista que el v3 default).
+          'pr-ai-background-model-version': 'background-studio-beta-2025-03-17',
+        },
         body: form,
         signal: AbortSignal.timeout(90000),
       })

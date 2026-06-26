@@ -88,16 +88,37 @@ async function photoroomShadow(cutoutBuffer, { mode = 'ai.soft', withShadow = tr
       console.error('[photoroom] respuesta no es una imagen válida')
       return null
     }
-    // Recortamos SOLO el aire 100% transparente del borde, dejando INTACTO el
-    // degradado suave de la sombra (su halo tenue es parte de lo que la hace
-    // realista — NO se toca). El "rectángulo interno" no se arregla acá sino en
-    // compose, que dimensiona por el auto opaco y deja que el halo se desborde
-    // parejo por todo el lienzo.
-    const buf = await sharp(raw)
+    // 1) Recortar el aire 100% transparente del borde.
+    let buf = await sharp(raw)
       .trim({ background: { r: 0, g: 0, b: 0, alpha: 0 }, threshold: 1 })
       .png().toBuffer()
       .catch(() => raw)
-    console.log(`[photoroom] edición ${tag} OK — ${meta.width}x${meta.height}`)
+
+    // 2) FEATHER del borde del marco → evita el "rectángulo cortado".
+    //    Photoroom devuelve la sombra dentro de un marco; el halo tenue llega hasta
+    //    el borde y, al componer, ese borde se ve como un rectángulo y corta la
+    //    sombra de golpe. Desvanecemos el alpha en una banda del borde (el auto va
+    //    centrado y lejos del borde, así que NO se toca; solo se suaviza la cola de
+    //    la sombra para que muera en transparente en vez de cortarse).
+    try {
+      const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+      const W = info.width, H = info.height
+      const band = Math.max(10, Math.round(Math.min(W, H) * 0.05))  // ancho del feather
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const dEdge = Math.min(x, y, W - 1 - x, H - 1 - y)         // dist. al borde más cercano
+          if (dEdge >= band) continue
+          const i = (y * W + x) * 4 + 3
+          if (data[i] >= 200) continue                               // auto SÓLIDO → no tocar
+          let t = dEdge / band                                       // 0 en el borde, 1 al entrar
+          t = t * t * (3 - 2 * t)                                     // smoothstep
+          data[i] = Math.round(data[i] * t)
+        }
+      }
+      buf = await sharp(data, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer()
+    } catch (e) { console.warn('[photoroom] feather falló:', e.message) }
+
+    console.log(`[photoroom] edición ${tag} OK — ${meta.width}x${meta.height} (feather aplicado)`)
     require('./usage').increment('shadow')   // contador local de uso (gasto real)
 
     // Guardar en caché (con tope LRU)
