@@ -4,7 +4,7 @@ import { Btn } from './ui'
 
 const MAX_UNDO = 20
 
-export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel, onDirty }) {
+export default function MaskEditor({ cutoutB64, originalUrl, restoreOffset, onSave, onCancel, onDirty }) {
   const canvasRef    = useRef(null)
   const origCutRef   = useRef(null)  // copia del cutout (para Reset)
   const origPhotoRef = useRef(null)  // foto original (para Restaurar)
@@ -147,10 +147,13 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel, o
     }
   }, [pan, zoom])
 
-  // Fuente de restauración: foto original si disponible, sino el cutout
-  const getRestoreSource = useCallback(() =>
-    origPhotoRef.current || origCutRef.current
-  , [])
+  // Fuente de restauración: foto original (con su offset de recentrado para que
+  // quede ALINEADA con el recorte) si está disponible; si no, el cutout (offset 0).
+  const getRestoreSource = useCallback(() => {
+    if (origPhotoRef.current)
+      return { src: origPhotoRef.current, ox: restoreOffset?.dx || 0, oy: restoreOffset?.dy || 0 }
+    return { src: origCutRef.current, ox: 0, oy: 0 }
+  }, [restoreOffset])
 
   // ── Dibujo ─────────────────────────────────────────────────────────────────
   const paintAt = useCallback((cx, cy) => {
@@ -174,7 +177,8 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel, o
       ctx.beginPath()
       ctx.arc(cx, cy, r, 0, Math.PI * 2)
       ctx.clip()
-      ctx.drawImage(getRestoreSource(), 0, 0)
+      const { src, ox, oy } = getRestoreSource()
+      ctx.drawImage(src, ox, oy)
       ctx.restore()
     }
     ctx.globalCompositeOperation = 'source-over'
@@ -212,7 +216,8 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel, o
     } else {
       ctx.clip()
       ctx.globalCompositeOperation = 'source-over'
-      ctx.drawImage(getRestoreSource(), 0, 0)
+      const { src, ox, oy } = getRestoreSource()
+      ctx.drawImage(src, ox, oy)
     }
     ctx.restore()
     setLassoPoints([])
@@ -450,17 +455,19 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel, o
         <div className="flex flex-col">
           <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400 px-0.5 mb-0.5">Modo</span>
           <div className="flex bg-white border border-slate-200 rounded-lg overflow-hidden">
-            <button onClick={() => { setPenMode('erase'); hideCursor() }}
+            {/* Al elegir un Modo, volver a la herramienta Pincel (si estaba en Mover/Lazo,
+                el modo no se aplicaba y quedaba la manito) */}
+            <button onClick={() => { setPenMode('erase'); setPenTool('brush'); cancelLasso(); hideCursor() }}
               className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors
                 ${penMode === 'erase' ? 'bg-red-50 text-red-700' : 'text-slate-500 hover:bg-slate-50'}`}>
               <Eraser size={13} /> Borrar
             </button>
-            <button onClick={() => { setPenMode('restore'); hideCursor() }}
+            <button onClick={() => { setPenMode('restore'); setPenTool('brush'); cancelLasso(); hideCursor() }}
               className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors border-l border-slate-200
                 ${penMode === 'restore' ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'}`}>
               <Paintbrush size={13} /> Restaurar
             </button>
-            <button onClick={() => { setPenMode('paint'); hideCursor() }}
+            <button onClick={() => { setPenMode('paint'); setPenTool('brush'); cancelLasso(); hideCursor() }}
               className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold transition-colors border-l border-slate-200
                 ${penMode === 'paint' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50'}`}>
               <Pencil size={13} /> Pintar
@@ -642,7 +649,11 @@ export default function MaskEditor({ cutoutB64, originalUrl, onSave, onCancel, o
           transform: `translate(${pan.x}px, ${pan.y}px)`,
           willChange: 'transform',
           display: ready ? 'block' : 'none',
-          backgroundImage: 'linear-gradient(45deg,#374151 25%,transparent 25%),linear-gradient(-45deg,#374151 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#374151 75%),linear-gradient(-45deg,transparent 75%,#374151 75%)',
+          // Cuadriculado claro estilo Photoshop: gris claro sobre base blanca (base
+          // propia, no depende del fondo oscuro del contenedor) → se ven bien los
+          // elementos oscuros del auto.
+          backgroundColor: '#fbfbfc',
+          backgroundImage: 'linear-gradient(45deg,#cfd4da 25%,transparent 25%),linear-gradient(-45deg,#cfd4da 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#cfd4da 75%),linear-gradient(-45deg,transparent 75%,#cfd4da 75%)',
           backgroundSize: '16px 16px',
           backgroundPosition: '0 0,0 8px,8px -8px,-8px 0',
           lineHeight: 0,

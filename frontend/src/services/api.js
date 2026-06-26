@@ -29,7 +29,7 @@ export async function detectType(file) {
   return res.json()
 }
 
-// options: { hidePlate: bool, plateLogoFile: File|null, model: 'small'|'medium'|'large' }
+// options: { hidePlate, plateLogoFile, model, engine: 'imgly'|'birefnet-lite'|'birefnet-full' }
 export async function removeBg(file, options = {}) {
   const form = new FormData()
   form.append('file', file)
@@ -37,7 +37,8 @@ export async function removeBg(file, options = {}) {
     form.append('hidePlate', 'true')
     if (options.plateLogoFile) form.append('plateLogo', options.plateLogoFile)
   }
-  if (options.model) form.append('model', options.model)
+  if (options.model)  form.append('model', options.model)
+  if (options.engine) form.append('engine', options.engine)
   const res = await apiFetch(`${BASE}/remove-bg`, { method: 'POST', body: form })
   return res.json()
 }
@@ -52,9 +53,20 @@ export async function adjustImage(cutoutB64, { brightness, contrast, rotation })
   return res.json()
 }
 
-export async function composeImage({ cutoutB64, bgFile, preset, scale, posX, posY, shadow, reflection }) {
+export async function composeImage({ cutoutB64, bgFile, preset, bgPrompt, seed, guidanceB64, scale, posX, posY, shadow, reflection, shadowIntensity, reflectionIntensity, upscale, relight }) {
   const form = new FormData()
   form.append('car', b64ToBlob(cutoutB64, 'image/png'), 'car.png')
+  if (upscale) form.append('upscale', 'true')
+  if (relight) form.append('relight', 'true')
+  // Fondo generado por IA: Photoroom arma toda la escena (auto + luz + sombra + reflejo)
+  if (bgPrompt) {
+    form.append('bg_prompt', bgPrompt)
+    // Consistencia entre fotos del mismo auto: mismo seed + 1ª escena como referencia
+    if (seed != null && seed !== '') form.append('seed', String(seed))
+    if (guidanceB64) form.append('guidance', b64ToBlob(guidanceB64, 'image/jpeg'), 'guide.jpg')
+    const res = await apiFetch(`${BASE}/compose`, { method: 'POST', body: form })
+    return res.json()
+  }
   if (bgFile)  form.append('background', bgFile)
   if (preset)  form.append('preset', preset)
   form.append('scale',  scale)
@@ -62,6 +74,8 @@ export async function composeImage({ cutoutB64, bgFile, preset, scale, posX, pos
   form.append('pos_y',  posY)
   form.append('shadow', shadow)
   form.append('reflection', !!reflection)
+  form.append('shadow_intensity',     shadowIntensity     ?? 100)
+  form.append('reflection_intensity', reflectionIntensity ?? 100)
   const res = await apiFetch(`${BASE}/compose`, { method: 'POST', body: form })
   return res.json()
 }

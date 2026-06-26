@@ -1,9 +1,9 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { ImagePlus, X, RefreshCw, Check, ChevronDown, ChevronUp, AlertCircle, Pencil } from 'lucide-react'
+import { ImagePlus, X, RefreshCw, Check, ChevronDown, ChevronUp, AlertCircle, Pencil, Sparkles } from 'lucide-react'
 import { Btn, Slider, Toggle, Card, SectionLabel, Spinner } from '../components/ui'
 import { composeImage } from '../services/api'
 import { useBgHistory } from '../hooks/useBgHistory'
-import { BG_PRESETS } from '../constants/bgPresets'
+import { BG_PRESETS, AI_SCENES } from '../constants/bgPresets'
 
 function useDebounce(value, delay) {
   const [dv, setDv] = useState(value)
@@ -14,49 +14,93 @@ function useDebounce(value, delay) {
   return dv
 }
 
+// Compone con reintento: si el backend se reinicia (OneDrive evict / hiccup), la
+// petición falla ("Failed to fetch" / JSON cortado). Reintentamos con espera para
+// darle tiempo a volver, en vez de cortar el lote con error.
+async function composeWithRetry(args, attempts = 3) {
+  let lastErr = null
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      const res = await composeImage(args)
+      if (res.ok) return res
+      lastErr = new Error(res.error || 'Error del servidor')
+    } catch (e) {
+      lastErr = e
+    }
+    if (i < attempts) await new Promise(r => setTimeout(r, i * 2500)) // 2,5s y 5s
+  }
+  return { ok: false, error: lastErr?.message || 'Error' }
+}
+
 export default function StepBackground({
-  images, effectiveType, setComposed, stats,
+  images, effectiveType, setComposed, stats, removeImage,
   onEdit, onZoom,
   onNext, onBack,
 }) {
-  const [preset,       setPreset]       = useState('white')
+  const [preset,       setPreset]       = useState('gray')
   const [customFile,   setCustomFile]   = useState(null)
   const [customUrl,    setCustomUrl]    = useState(null)
+  // Fondo con IA: id de escena activa (o 'custom') + texto libre
+  const [aiSceneId,    setAiSceneId]    = useState(null)
+  const [customPrompt, setCustomPrompt] = useState('')
   const [scale,   setScale]   = useState(80)
   const [posX,    setPosX]    = useState(50)
   const [posY,    setPosY]    = useState(60)
   const [shadow,     setShadow]     = useState(true)
-  const [reflection, setReflection] = useState(false)
+  const [shadowIntensity,     setShadowIntensity]     = useState(100)
+  // Mejoras IA (viajan en la misma llamada a Photoroom, sin costo extra)
+  const [upscale, setUpscale] = useState(false)
+  const [relight, setRelight] = useState(false)
   const [applying,      setApplying]      = useState(false)
   const [progress,      setProgress]      = useState(0)
   const [composeError,  setComposeError]  = useState(null)
   const [showSettings, setShowSettings] = useState(true)
+  // Selección de fotos para aplicar fondos distintos por grupo (vacío = todas)
+  const [selected, setSelected] = useState(() => new Set())
   const stopRef    = useRef(false)
   const applyToken = useRef(0)
+
+  const toggleSelected = (id) => setSelected(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+  const clearSelected = () => setSelected(new Set())
 
   const { recent: recentBgs, addBg, deleteBg } = useBgHistory()
 
   const exteriorDone  = images.filter(i => effectiveType(i) === 'exterior' && i.status === 'done')
   const composedCount = images.filter(i => i.composedB64).length
-  const hasBg = preset || customFile
-  // El reflejo solo tiene sentido visual en fotos de perfil (auto horizontal)
-  const anyHorizontal = exteriorDone.some(i => i.horizontal)
+
+  // Fondo IA: prompt activo (escena preset o texto libre). Se aplica MANUALMENTE
+  // (botón Aplicar), nunca en auto, porque cada generación consume cupo de Photoroom.
+  const aiPrompt = aiSceneId === 'custom'
+    ? customPrompt.trim()
+    : (AI_SCENES.find(s => s.id === aiSceneId)?.prompt || '')
+  const useAi = !!(aiSceneId && aiPrompt)
+
+  const hasBg = useAi || preset || customFile
 
   const dScale      = useDebounce(scale,      700)
   const dPosX       = useDebounce(posX,       700)
   const dPosY       = useDebounce(posY,       700)
   const dShadow     = useDebounce(shadow,     700)
-  const dReflection = useDebounce(reflection, 700)
+  const dShadowInt  = useDebounce(shadowIntensity, 700)
+  const dUpscale    = useDebounce(upscale, 700)
+  const dRelight    = useDebounce(relight, 700)
 
   const exteriorIds = exteriorDone.map(i => i.id).join(',')
 
   useEffect(() => {
-    if (!hasBg || !exteriorDone.length) return
+    // Auto-apply SOLO el fondo inicial (gris) cuando todavía no hay nada compuesto.
+    // Una vez que hay resultados, los cambios se aplican con el botón (para no pisar
+    // los fondos por-grupo). Tampoco corre con IA ni con selección activa.
+    if (!hasBg || !exteriorDone.length || useAi || selected.size > 0 || composedCount > 0) return
 
     const snap = {
       imgs: [...exteriorDone],
       bgFile: customFile, preset: customFile ? null : preset,
-      scale: dScale, posX: dPosX, posY: dPosY, shadow: dShadow, reflection: dReflection,
+      scale: dScale, posX: dPosX, posY: dPosY, shadow: dShadow,
+      shadowIntensity: dShadowInt,
+      upscale: dUpscale, relight: dRelight,
     }
 
     const myToken = ++applyToken.current
@@ -70,20 +114,23 @@ export default function StepBackground({
       for (const img of snap.imgs) {
         if (applyToken.current !== myToken) break
         if (!img.cutoutB64) { done++; continue }
-        const imgReflection = snap.reflection && img.horizontal
+        // Sombra: a todos (Photoroom la proyecta según el ángulo).
+        const imgShadow = snap.shadow
         try {
-          const res = await composeImage({
+          const res = await composeWithRetry({
             cutoutB64: img.cutoutB64,
             bgFile: snap.bgFile, preset: snap.preset,
-            scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: snap.shadow,
-            reflection: imgReflection,
+            scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: imgShadow,
+            shadowIntensity: snap.shadowIntensity,
+            upscale: snap.upscale, relight: snap.relight,
           })
           if (applyToken.current !== myToken) break
           if (res.ok) {
             setComposed(img.id, res.image, {
               bgFile: snap.bgFile, preset: snap.preset,
-              scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: snap.shadow,
-              reflection: imgReflection,
+              scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: imgShadow,
+              shadowIntensity: snap.shadowIntensity,
+              upscale: snap.upscale, relight: snap.relight,
             })
           } else {
             if (applyToken.current === myToken)
@@ -100,25 +147,36 @@ export default function StepBackground({
       if (applyToken.current === myToken) setApplying(false)
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dScale, dPosX, dPosY, dShadow, dReflection, preset, customFile, exteriorIds])
+  }, [dScale, dPosX, dPosY, dShadow, dShadowInt, dUpscale, dRelight, preset, customFile, exteriorIds])
 
   const applyAll = useCallback(async () => {
     ++applyToken.current
     const token = applyToken.current
     setApplying(true); stopRef.current = false; setProgress(0); setComposeError(null)
+    // Destino: si hay selección, solo esas; si no, todas las exteriores
+    const sel = exteriorDone.filter(i => selected.has(i.id))
+    const targets = sel.length ? sel : exteriorDone
     const bgCfgBase = {
       bgFile: customFile, preset: customFile ? null : preset,
-      scale, posX, posY, shadow,
+      scale, posX, posY, shadow, shadowIntensity,
+      upscale, relight,
     }
+    // Consistencia IA: mismo seed para todo el grupo + la 1ª escena como referencia
+    const seed = useAi ? Math.floor(Math.random() * 1e6) : null
+    let guidanceB64 = null
     let done = 0
-    for (const img of exteriorDone) {
+    for (const img of targets) {
       if (stopRef.current || token !== applyToken.current) break
       if (!img.cutoutB64) { done++; continue }
-      const cfg = { ...bgCfgBase, reflection: reflection && img.horizontal }
+      const cfg = useAi
+        ? { bgPrompt: aiPrompt, upscale, relight, seed, guidanceB64 }
+        : { ...bgCfgBase, shadow }
       try {
-        const res = await composeImage({ cutoutB64: img.cutoutB64, ...cfg })
+        const res = await composeWithRetry({ cutoutB64: img.cutoutB64, ...cfg })
         if (res.ok) {
-          setComposed(img.id, res.image, cfg)
+          const { guidanceB64: _g, ...saveCfg } = cfg   // guidance es interno, no se guarda
+          setComposed(img.id, res.image, saveCfg)
+          if (useAi && !guidanceB64) guidanceB64 = res.image   // 1ª escena → referencia
         } else {
           setComposeError(res.error || 'Error del servidor')
         }
@@ -126,12 +184,14 @@ export default function StepBackground({
         setComposeError('Error de conexión: ' + (err?.message || 'desconocido'))
       }
       done++
-      setProgress(Math.round(done / exteriorDone.length * 100))
+      setProgress(Math.round(done / targets.length * 100))
     }
     setApplying(false)
-  }, [exteriorDone, customFile, preset, scale, posX, posY, shadow, reflection, setComposed])
+    clearSelected()
+  }, [exteriorDone, selected, customFile, preset, useAi, aiPrompt, scale, posX, posY, shadow, shadowIntensity, upscale, relight, setComposed])
 
-  const selectPreset = (id) => { setPreset(id); setCustomFile(null); setCustomUrl(null) }
+  const selectPreset = (id) => { setPreset(id); setCustomFile(null); setCustomUrl(null); setAiSceneId(null) }
+  const selectAiScene = (id) => { setAiSceneId(id); setPreset(null); setCustomFile(null); setCustomUrl(null) }
 
   // Thumb: imagen arriba (click = zoom) + acciones siempre visibles abajo, sin superposiciones
   const ComposedThumb = ({ img }) => {
@@ -144,12 +204,40 @@ export default function StepBackground({
 
     const bgClass = img.composedB64 ? 'bg-slate-100' : img.cutoutB64 ? 'checker' : 'bg-slate-100'
     const canEdit = onEdit && !isInterior && (img.composedB64 || img.cutoutB64)
+    const selectable = !isInterior && (img.cutoutB64 || img.composedB64)
+    const isSelected = selected.has(img.id)
 
     return (
-      <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+      <div className={`rounded-xl overflow-hidden bg-white border-2 transition-colors
+        ${isSelected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'}`}>
         <div className={`relative aspect-[4/3] ${bgClass} ${onZoom ? 'cursor-zoom-in' : ''}`}
           onClick={onZoom ? () => onZoom(img.id) : undefined}>
           <img src={src} className="w-full h-full object-contain" />
+
+          {/* Eliminar — siempre visible */}
+          {removeImage && (
+            <button
+              onClick={e => { e.stopPropagation(); removeImage(img.id) }}
+              title="Eliminar imagen"
+              className="absolute top-2 left-2 w-7 h-7 bg-black/55 text-white rounded-lg
+                flex items-center justify-center transition-colors hover:bg-red-500 active:bg-red-600 z-10">
+              <X size={13} strokeWidth={2.5} />
+            </button>
+          )}
+
+          {/* Casilla de selección — para aplicar fondos por grupo */}
+          {selectable && (
+            <button
+              onClick={e => { e.stopPropagation(); toggleSelected(img.id) }}
+              title={isSelected ? 'Quitar de la selección' : 'Seleccionar para aplicar un fondo'}
+              className={`absolute top-2 right-2 w-7 h-7 rounded-lg flex items-center justify-center z-10
+                border-2 transition-colors shadow-sm
+                ${isSelected
+                  ? 'bg-blue-600 border-blue-600 text-white'
+                  : 'bg-white/85 border-white/90 text-transparent hover:border-blue-400'}`}>
+              <Check size={14} strokeWidth={3} />
+            </button>
+          )}
 
           {applying && !isInterior && !img.composedB64 && (
             <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
@@ -164,8 +252,8 @@ export default function StepBackground({
           )}
 
           {img.composedB64 && !isInterior && (
-            <div className="absolute top-1.5 right-1.5 w-5 h-5 bg-green-500 rounded-full
-              flex items-center justify-center shadow-sm">
+            <div className="absolute bottom-1.5 right-1.5 w-5 h-5 bg-green-500 rounded-full
+              flex items-center justify-center shadow-sm" title="Fondo aplicado">
               <Check size={10} className="text-white" />
             </div>
           )}
@@ -234,6 +322,7 @@ export default function StepBackground({
                       setCustomFile(f)
                       setCustomUrl(URL.createObjectURL(f))
                       setPreset(null)
+                      setAiSceneId(null)
                       addBg(f)
                     }
                   }} />
@@ -243,7 +332,7 @@ export default function StepBackground({
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                         <span className="opacity-0 group-hover:opacity-100 text-white text-xs font-semibold bg-black/60 px-2 py-1 rounded transition-opacity">Cambiar</span>
                       </div>
-                      <button onClick={e => { e.preventDefault(); setCustomFile(null); setCustomUrl(null); setPreset('white') }}
+                      <button onClick={e => { e.preventDefault(); setCustomFile(null); setCustomUrl(null); setPreset('gray') }}
                         className="absolute top-1.5 right-1.5 w-5 h-5 bg-black/60 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <X size={10} />
                       </button>
@@ -296,6 +385,63 @@ export default function StepBackground({
               )}
             </div>
 
+            {/* ── Fondo con IA (escenas generadas) ── */}
+            <div className="pt-1 border-t border-slate-100">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Sparkles size={13} className="text-violet-500" />
+                <SectionLabel className="mb-0">Fondo con IA</SectionLabel>
+                <span className="text-[10px] font-semibold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded">Premium</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                {AI_SCENES.map(s => (
+                  <button key={s.id} onClick={() => selectAiScene(s.id)}
+                    className={`h-12 rounded-lg text-xs font-semibold transition-all border-2 flex flex-col items-center justify-center gap-0.5
+                      ${aiSceneId === s.id
+                        ? 'border-violet-500 bg-violet-50 text-violet-700 ring-2 ring-violet-100'
+                        : 'border-slate-200 bg-white text-slate-600 hover:border-violet-300'}`}>
+                    <span className="text-sm leading-none">{s.emoji}</span>
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Escena personalizada (texto libre) */}
+              <div className="flex gap-2">
+                <input type="text" value={aiSceneId === 'custom' ? customPrompt : ''}
+                  onChange={e => { setCustomPrompt(e.target.value); selectAiScene('custom') }}
+                  onFocus={() => { if (customPrompt || aiSceneId !== 'custom') selectAiScene('custom') }}
+                  placeholder="o describí tu escena… (ej: garage de lujo, piso negro)"
+                  className={`flex-1 text-xs rounded-lg border px-3 py-2 outline-none transition-colors
+                    ${aiSceneId === 'custom' ? 'border-violet-400 ring-2 ring-violet-100' : 'border-slate-200 focus:border-violet-300'}`} />
+              </div>
+
+              {useAi && (
+                <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 mt-2">
+                  <Sparkles size={13} className="text-violet-500 mt-0.5 flex-shrink-0" />
+                  <p className="text-[11px] text-violet-700 leading-snug">
+                    La IA arma la escena completa (luz, sombra y reflejo incluidos). Tocá <b>Aplicar fondo</b> para
+                    generar. <b>Cada foto consume 1 imagen</b> del cupo de Photoroom.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* ── Mejoras IA (opcional) — aplican con cualquier fondo ── */}
+            <div className="pt-1 border-t border-slate-100 space-y-2">
+              <div className="flex items-center gap-1.5">
+                <Sparkles size={13} className="text-violet-500" />
+                <SectionLabel className="mb-0">Mejoras IA (opcional)</SectionLabel>
+              </div>
+              <Toggle label="Mejorar resolución (fotos de baja calidad)" value={upscale} onChange={setUpscale} />
+              <Toggle label="Mejorar iluminación (relighting)" value={relight} onChange={setRelight} />
+              {(upscale || relight) && (
+                <p className="text-[11px] text-slate-400 leading-snug">
+                  Se aplican en la misma generación (no cuestan una imagen aparte).
+                  {upscale && ' El upscale actúa solo en fotos chicas/de baja resolución; las grandes ya no lo necesitan.'}
+                </p>
+              )}
+            </div>
+
             {/* Aplicar */}
             <div className="flex items-center gap-2 pt-1">
               <button
@@ -305,24 +451,31 @@ export default function StepBackground({
                   rounded-lg hover:bg-blue-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
                 {applying
                   ? <><Spinner size="sm" color="text-white" /> Aplicando…</>
-                  : <><RefreshCw size={13} /> Aplicar fondo</>}
+                  : <><RefreshCw size={13} /> {selected.size > 0 ? `Aplicar a estas ${selected.size}` : 'Aplicar a todas'}</>}
               </button>
               {applying && (
                 <span className="text-xs text-blue-700 font-semibold tabular-nums">{progress}%</span>
               )}
             </div>
+            {exteriorDone.length > 1 && !applying && (
+              <p className="text-[11px] text-slate-400 leading-snug">
+                💡 Tocá el <b>✓</b> de las fotos para aplicar fondos <b>distintos por grupo</b> (ej: unas con showroom IA, otras con gris). Sin selección, se aplica a todas.
+              </p>
+            )}
 
-            {/* Posición */}
+            {/* Posición — solo para fondos normales; el fondo IA arma la escena solo */}
+            {!useAi && (
             <div className="space-y-3">
               <SectionLabel>Posición y tamaño</SectionLabel>
               <Slider label="Tamaño del auto"     value={scale} min={10} max={120} unit="%" onChange={setScale} />
               <Slider label="Posición horizontal" value={posX}  min={0}  max={100} unit="%" onChange={setPosX} />
               <Slider label="Posición vertical"   value={posY}  min={0}  max={100} unit="%" onChange={setPosY} />
               <Toggle label="Sombra bajo el auto" value={shadow} onChange={setShadow} />
-              {anyHorizontal && (
-                <Toggle label="Reflejo (autos de perfil)" value={reflection} onChange={setReflection} />
+              {shadow && (
+                <Slider label="Intensidad de la sombra" value={shadowIntensity} min={0} max={100} unit="%" onChange={setShadowIntensity} />
               )}
             </div>
+            )}
           </div>
         )}
       </Card>
@@ -344,6 +497,21 @@ export default function StepBackground({
       {/* ── Resultados ── */}
       {exteriorDone.length > 0 ? (
         <div>
+          {/* Barra de selección — visible cuando hay fotos seleccionadas */}
+          {selected.size > 0 && !applying && (
+            <div className="flex items-center gap-2 mb-3 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
+              <Check size={15} className="text-blue-600 flex-shrink-0" />
+              <span className="text-sm font-semibold text-blue-800">{selected.size} seleccionada{selected.size !== 1 ? 's' : ''}</span>
+              <span className="text-xs text-blue-600/80 hidden sm:inline">— elegí un fondo arriba y "Aplicar a estas"</span>
+              <div className="ml-auto flex items-center gap-2">
+                <button onClick={() => setSelected(new Set(exteriorDone.map(i => i.id)))}
+                  className="text-xs font-semibold text-blue-700 hover:text-blue-900">Todas</button>
+                <button onClick={clearSelected}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-700">Quitar</button>
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <p className="text-sm font-semibold text-slate-700">
@@ -398,10 +566,10 @@ export default function StepBackground({
             disabled={composedCount === 0 && exteriorDone.length === 0}
             onClick={onNext}>
             {composedCount > 0
-              ? `Exportar (${composedCount} con fondo)`
+              ? `Siguiente: publicar o descargar (${composedCount}) →`
               : exteriorDone.length > 0
-                ? `Exportar sin fondo (${exteriorDone.length})`
-                : 'Exportar'}
+                ? `Siguiente: descargar (${exteriorDone.length}) →`
+                : 'Siguiente →'}
           </Btn>
         </div>
       </div>

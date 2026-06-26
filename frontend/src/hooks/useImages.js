@@ -77,14 +77,26 @@ export function useImages() {
     for (const img of targets) {
       if (stopRef?.current) break
       update(img.id, { status: 'processing', error: null })
-      try {
-        const res = await removeBg(img.file, plateOptions)
-        if (!res.ok) throw new Error(res.error || 'Error del servidor')
-        const blobs = await detectBlobs(res.image)
-        update(img.id, { status: 'done', cutoutB64: res.image, plateApplied: needsPlate, blobs, horizontal: !!res.horizontal })
-      } catch (e) {
-        update(img.id, { status: 'error', error: e.message })
+      // Reintento automático: si el backend se reinicia (OneDrive evict / hiccup),
+      // la petición falla ("Failed to fetch" / JSON cortado). Reintentamos con espera
+      // para darle tiempo a volver, en vez de dejar la foto en error.
+      let lastErr = null, ok = false
+      for (let attempt = 1; attempt <= 3 && !ok && !stopRef?.current; attempt++) {
+        try {
+          const res = await removeBg(img.file, plateOptions)
+          if (!res.ok) throw new Error(res.error || 'Error del servidor')
+          const blobs = await detectBlobs(res.image)
+          update(img.id, { status: 'done', cutoutB64: res.image, plateApplied: needsPlate, blobs, level: res.level !== false, offset: res.offset ?? { dx: 0, dy: 0 } })
+          ok = true
+        } catch (e) {
+          lastErr = e
+          if (attempt < 3) {
+            update(img.id, { status: 'processing', error: `Reintentando ${attempt}/2…` })
+            await new Promise(r => setTimeout(r, attempt * 2500)) // 2,5s y 5s
+          }
+        }
       }
+      if (!ok && !stopRef?.current) update(img.id, { status: 'error', error: lastErr?.message || 'Error' })
     }
   }, [images, update])
 
@@ -134,7 +146,7 @@ export function useImages() {
       const res = await removeBg(img.file, options)
       if (!res.ok) throw new Error(res.error || 'Error del servidor')
       const blobs = await detectBlobs(res.image)
-      update(id, { status: 'done', cutoutB64: res.image, blobs, horizontal: !!res.horizontal })
+      update(id, { status: 'done', cutoutB64: res.image, blobs, level: res.level !== false, offset: res.offset ?? { dx: 0, dy: 0 } })
     } catch (e) {
       update(id, { status: 'error', error: e.message })
     }
@@ -166,6 +178,36 @@ export function useImages() {
   const removeImage  = useCallback((id) => setImages(prev => prev.filter(img => img.id !== id)), [])
   const clearAll     = useCallback(() => setImages([]), [])
 
+  // Retomar un borrador: reconstruye el estado de trabajo desde una sesión guardada.
+  // No hay foto original (no se guarda por peso) → se marca `restored` y el preview
+  // usa el recorte. Suficiente para seguir con fondos / editar máscara / exportar.
+  const loadImages = useCallback((sessionImages) => {
+    if (!Array.isArray(sessionImages)) return
+    const restored = sessionImages
+      .filter(s => s.cutoutB64 || s.composedB64)
+      .map(s => ({
+        id: uid(),
+        file: { name: s.fileName || 'imagen.jpg' },   // stub (sin la foto original)
+        previewUrl: s.cutoutB64 ? `data:image/png;base64,${s.cutoutB64}` : null,
+        detectedType: s.detectedType || 'exterior',
+        detectedConfidence: 1,
+        typeOverride: s.typeOverride ?? null,
+        status: 'done',
+        cutoutB64: s.cutoutB64 || null,
+        composedB64: s.composedB64 || null,
+        bgSettings: s.bgSettings ?? null,
+        level: s.level !== false,
+        // El preview es el recorte (ya alineado) → "Restaurar" usa offset 0
+        offset: { dx: 0, dy: 0 },
+        blobs: [],
+        error: null,
+        adjustments: s.adjustments ?? { ...DEFAULT_ADJUSTMENTS },
+        plateApplied: true,
+        restored: true,
+      }))
+    setImages(restored)
+  }, [])
+
   // Guarda bgSettings y composedB64 juntos (llamado desde StepBackground)
   const setComposed = useCallback((id, b64, bgCfg = null) =>
     update(id, bgCfg ? { composedB64: b64, bgSettings: bgCfg } : { composedB64: b64 })
@@ -193,7 +235,7 @@ export function useImages() {
   return {
     images, rejected, addFiles, toggleType, effectiveType,
     processAll, reprocess, applyAdjustments, applyBlobSelection,
-    removeImage, clearAll, setComposed, clearComposed, resetProcessing, recomposeOne,
+    removeImage, clearAll, loadImages, setComposed, clearComposed, resetProcessing, recomposeOne,
     stats: {
       total:      images.length,
       exterior:   images.filter(i => effectiveType(i) === 'exterior').length,

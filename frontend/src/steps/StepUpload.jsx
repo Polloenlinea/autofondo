@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { Camera, Images, Plus, Scissors, EyeOff, Info, AlertTriangle, ShieldCheck, ChevronDown, ChevronUp, ImagePlus, X } from 'lucide-react'
+import { Camera, Images, Plus, Scissors, EyeOff, Info, AlertTriangle, ShieldCheck, ChevronDown, ChevronUp, ImagePlus, X, Sparkles } from 'lucide-react'
 import ImageCard from '../components/ImageCard'
 import { Btn } from '../components/ui'
 
-export default function StepUpload({ images, rejected, addFiles, toggleType, effectiveType, removeImage, onNext, stats, plateOptions, onPlateOptions }) {
+export default function StepUpload({ images, rejected, addFiles, toggleType, effectiveType, removeImage, onZoom, onNext, stats, plateOptions, onPlateOptions }) {
   const [dragging,         setDragging]         = useState(false)
   const [plateOpen,        setPlateOpen]        = useState(false)
   const [plateLogoPreview, setPlateLogoPreview] = useState(null)
@@ -148,6 +148,36 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
         </div>
       )}
 
+      {/* ── Motor de recorte (calidad) ── */}
+      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 space-y-3">
+        <div className="flex items-center gap-3">
+          <Sparkles size={18} className="text-blue-700" />
+          <span className="text-sm font-semibold text-slate-700">Calidad del recorte</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {[
+            { id: 'imgly',         label: 'Rápido',  sub: '~2s' },
+            { id: 'birefnet-lite', label: 'Calidad', sub: '~9s' },
+          ].map(opt => {
+            const active = (plateOptions.engine ?? 'birefnet-lite') === opt.id
+            return (
+              <button key={opt.id}
+                onClick={() => onPlateOptions({ ...plateOptions, engine: opt.id })}
+                className={`flex flex-col items-center justify-center gap-0.5 py-2.5 rounded-xl border-2 transition-all min-h-[52px]
+                  ${active
+                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 text-slate-500 hover:border-slate-300'}`}>
+                <span className="text-sm font-semibold">{opt.label}</span>
+                <span className="text-[10px] opacity-70">{opt.sub}</span>
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-xs text-slate-400 leading-relaxed">
+          <span className="font-semibold text-slate-500">Calidad</span> usa IA de mejor recorte (bordes, ruedas, vidrios) — tarda un poco más pero queda mucho más prolijo. Recomendado.
+        </p>
+      </div>
+
       {/* ── Opciones de matrícula ── */}
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
         <button
@@ -282,6 +312,7 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
                 effectiveType={effectiveType}
                 onToggleType={() => toggleType(img.id)}
                 onRemove={() => removeImage(img.id)}
+                onZoom={onZoom}
               />
             ))}
           </div>
@@ -294,7 +325,7 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
           border-t border-slate-200 px-4 py-4 pb-safe">
           <div className="max-w-2xl mx-auto">
             <Btn variant="primary" size="full" onClick={onNext} disabled={!canContinue}>
-              Procesar {stats.exterior} imagen{stats.exterior !== 1 ? 'es' : ''} →
+              Siguiente: procesar {stats.exterior} imagen{stats.exterior !== 1 ? 'es' : ''} →
             </Btn>
           </div>
         </div>

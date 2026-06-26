@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { X, Trash2, Download, ChevronDown, ChevronUp, History, Loader2 } from 'lucide-react'
+import { X, Trash2, Download, ChevronDown, ChevronUp, History, Loader2, Play } from 'lucide-react'
 
 // Detecta MIME a partir del primer byte del base64 (sin necesitar el array images)
 function thumbMime(b64) {
@@ -7,12 +7,25 @@ function thumbMime(b64) {
   return b64.startsWith('/9j/') ? 'jpeg' : 'png'
 }
 
-export default function SessionsPanel({ open, onClose, sessions, onDelete, onLoadSession }) {
+export default function SessionsPanel({ open, onClose, sessions, onDelete, onLoadSession, onContinue }) {
   const [expanded,     setExpanded]     = useState(null)
   const [deleting,     setDeleting]     = useState(null)
   const [loadingId,    setLoadingId]    = useState(null)
+  const [continuingId, setContinuingId] = useState(null)
   // Cache de sesiones completas (con imágenes) indexadas por _id
   const [loadedImages, setLoadedImages] = useState({})
+
+  // Retomar borrador: carga las imágenes guardadas de vuelta al flujo de trabajo
+  const handleContinue = async (sid) => {
+    if (!onContinue) return
+    setContinuingId(sid)
+    try {
+      const imgs = loadedImages[sid] || (await onLoadSession(sid))?.images || []
+      onContinue(imgs)
+    } catch { /* noop */ } finally {
+      setContinuingId(null)
+    }
+  }
 
   if (!open) return null
 
@@ -84,8 +97,8 @@ export default function SessionsPanel({ open, onClose, sessions, onDelete, onLoa
           {sessions.length === 0 ? (
             <div className="py-16 text-center">
               <History size={32} className="text-slate-200 mx-auto mb-3" />
-              <p className="text-sm text-slate-400 font-medium">No hay sesiones guardadas</p>
-              <p className="text-xs text-slate-300 mt-1">Guardá una sesión desde la pantalla de Exportar</p>
+              <p className="text-sm text-slate-400 font-medium">No hay borradores guardados</p>
+              <p className="text-xs text-slate-300 mt-1">Guardá un borrador desde el último paso para retomarlo después</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -115,13 +128,23 @@ export default function SessionsPanel({ open, onClose, sessions, onDelete, onLoa
                           {fmt(s.date)} · {s.count} imagen{s.count !== 1 ? 'es' : ''}
                         </p>
                       </div>
+                      {/* Continuar — retomar el borrador */}
+                      <button onClick={() => handleContinue(sid)} disabled={continuingId === sid}
+                        title="Retomar este borrador y seguir trabajando"
+                        className="flex items-center gap-1 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50">
+                        {continuingId === sid
+                          ? <Loader2 size={12} className="animate-spin" />
+                          : <Play size={12} />}
+                        Continuar
+                      </button>
                       {/* Ver fotos */}
                       <button onClick={() => handleExpand(sid)}
-                        className="flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
+                        title="Ver las fotos guardadas"
+                        className="flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800 px-2 py-1.5 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">
                         {loadingId === sid
                           ? <Loader2 size={12} className="animate-spin" />
                           : isOpen ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                        Ver fotos
+                        <span className="hidden sm:inline">Ver fotos</span>
                       </button>
                       {/* Eliminar */}
                       <button

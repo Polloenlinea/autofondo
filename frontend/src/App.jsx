@@ -1,21 +1,28 @@
-import { useState, useCallback } from 'react'
-import { History } from 'lucide-react'
+import { useState, useCallback, useEffect } from 'react'
+import { History, Save } from 'lucide-react'
 import StepBar        from './components/StepBar'
+import ConfirmDialog  from './components/ConfirmDialog'
 import StepUpload     from './steps/StepUpload'
 import StepReview     from './steps/StepReview'
 import StepBackground from './steps/StepBackground'
 import StepExport     from './steps/StepExport'
 import SessionsPanel  from './components/SessionsPanel'
+import SaveDraftModal from './components/SaveDraftModal'
+import UsageBadge     from './components/UsageBadge'
 import EditModal      from './components/EditModal'
 import ZoomModal      from './components/ZoomModal'
 import { useImages }  from './hooks/useImages'
 import { useSessions } from './hooks/useSessions'
 
+// Versión visible — subir el número cada vez que cambia algo notable para poder
+// confirmar qué versión se está probando.
+const APP_VERSION = 'v0.14.0 · defringe + contador IA'
+
 export default function App() {
   const [step,         setStep]         = useState(0)
   const [outputSize,   setOutputSize]   = useState('original')
   const [showSessions, setShowSessions] = useState(false)
-  const [plateOptions, setPlateOptions] = useState({ hidePlate: false, plateLogoFile: null })
+  const [plateOptions, setPlateOptions] = useState({ hidePlate: false, plateLogoFile: null, engine: 'birefnet-lite' })
 
   // Modal global de edición
   const [editingImgId, setEditingImgId] = useState(null)
@@ -24,21 +31,77 @@ export default function App() {
   // Modal de zoom
   const [zoomImgId, setZoomImgId] = useState(null)
 
+  // Confirmación para acciones destructivas (no perder el trabajo por un click)
+  const [confirmAction, setConfirmAction] = useState(null)
+  // Guardar borrador desde cualquier etapa
+  const [showSaveModal, setShowSaveModal] = useState(false)
+
   const {
     images, rejected, addFiles, toggleType, effectiveType,
     processAll, reprocess, applyAdjustments, applyBlobSelection,
-    removeImage, clearAll, setComposed, clearComposed, resetProcessing, recomposeOne, stats,
+    removeImage, clearAll, loadImages, setComposed, clearComposed, resetProcessing, recomposeOne, stats,
   } = useImages()
 
   const { sessions, saveSession, deleteSession, loadSession } = useSessions()
 
-  const reset = () => {
+  // ¿Hay trabajo que se perdería? (recortes procesados o fondos aplicados)
+  const hasCutouts  = images.some(i => i.cutoutB64)
+  const hasComposed = images.some(i => i.composedB64)
+  const hasWork     = hasCutouts || hasComposed
+
+  // Aviso al recargar / cerrar el navegador si hay trabajo sin guardar
+  useEffect(() => {
+    const handler = (e) => {
+      if (!hasWork) return
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [hasWork])
+
+  // Ejecuta `action` directo, o pide confirmación si `when` es true
+  const guard = (action, { title, message, confirmLabel, when }) => {
+    if (when) {
+      setConfirmAction({ title, message, confirmLabel, onConfirm: () => { setConfirmAction(null); action() } })
+    } else {
+      action()
+    }
+  }
+
+  const doReset = () => {
     clearAll()
     setStep(0)
     setOutputSize('original')
-    setPlateOptions({ hidePlate: false, plateLogoFile: null })
+    setPlateOptions({ hidePlate: false, plateLogoFile: null, engine: 'birefnet-lite' })
     setEditingImgId(null)
     setZoomImgId(null)
+  }
+
+  const requestReset = () => guard(doReset, {
+    title: 'Empezar de nuevo',
+    message: 'Se va a borrar todo el trabajo de este lote (recortes y fondos). Si querés conservarlo, guardá el lote primero desde el paso final. ¿Empezar de nuevo igual?',
+    confirmLabel: 'Empezar de nuevo',
+    when: hasWork,
+  })
+
+  // Retomar un borrador: carga las imágenes guardadas y va al paso de Exportar
+  // (resultados preservados, sin re-componer). Confirma si hay trabajo actual.
+  const requestContinue = (sessionImages) => {
+    const doContinue = () => {
+      loadImages(sessionImages)
+      setOutputSize('original')
+      setEditingImgId(null)
+      setZoomImgId(null)
+      setShowSessions(false)
+      setStep(3)
+    }
+    guard(doContinue, {
+      title: 'Retomar borrador',
+      message: 'Se va a reemplazar el lote actual por el borrador guardado. ¿Continuar?',
+      confirmLabel: 'Retomar borrador',
+      when: hasWork,
+    })
   }
 
   const openEdit = (id, context = 'review') => {
@@ -62,13 +125,20 @@ export default function App() {
     <div className="min-h-screen bg-slate-50">
 
       {/* ── Header ── */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+      <header className="relative bg-white border-b border-slate-200 sticky top-0 z-40">
+        {/* Branding del ecosistema — desktop (espacio libre a la derecha del contenido) */}
+        <div className="hidden lg:flex items-center gap-2 absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none select-none">
+          <span className="text-[11px] text-slate-400 font-medium">una herramienta de</span>
+          <img src="/brands/logo-autohub.svg" alt="AutoHub" className="h-5 w-auto" />
+          <span className="text-slate-300 mx-0.5">·</span>
+          <span className="text-[11px] text-slate-400 font-medium">powered by</span>
+          <img src="/brands/logo-artificialmente-h.svg" alt="Artificialmente" className="h-4 w-auto" />
+        </div>
         <div className="max-w-2xl mx-auto px-4 flex items-center gap-3" style={{ minHeight: '60px' }}>
-          {/* Logo */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <img src="/iso-autofondo.svg" alt="AutoFondo" className="w-8 h-8 rounded-xl flex-shrink-0" />
-            <span className="font-bold text-slate-800 text-sm tracking-tight hidden sm:block">AutoFondo</span>
-          </div>
+          {/* Logo AutoFondo (oficial) — link a la landing */}
+          <a href="/" title="Volver al inicio" className="flex items-center gap-2 flex-shrink-0 hover:opacity-80 transition-opacity">
+            <img src="/brands/logo-autofondo-dark.svg" alt="AutoFondo" className="h-6 sm:h-7 w-auto flex-shrink-0" />
+          </a>
 
           <div className="w-px h-5 bg-slate-200 flex-shrink-0 hidden sm:block" />
 
@@ -79,14 +149,24 @@ export default function App() {
 
           {/* Acciones derecha */}
           <div className="flex items-center gap-1 flex-shrink-0">
+            <UsageBadge />
+            {hasWork && (
+              <button onClick={() => setShowSaveModal(true)}
+                title="Guardar borrador para retomar después"
+                className="flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900
+                  transition-colors px-2 py-2 rounded-lg hover:bg-blue-50 min-h-[44px]">
+                <Save size={15} /> <span className="hidden sm:inline">Guardar</span>
+              </button>
+            )}
             {step > 0 && (
-              <button onClick={reset}
+              <button onClick={requestReset}
                 className="text-xs font-semibold text-slate-400 hover:text-slate-600
                   transition-colors px-2 py-2 rounded-lg hover:bg-slate-100 min-h-[44px]">
                 Reiniciar
               </button>
             )}
             <button onClick={() => setShowSessions(true)}
+              title="Historial de borradores"
               className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400
                 hover:text-slate-700 hover:bg-slate-100 transition-colors">
               <History size={18} />
@@ -103,6 +183,7 @@ export default function App() {
             toggleType={toggleType} effectiveType={effectiveType}
             removeImage={removeImage} stats={stats}
             plateOptions={plateOptions} onPlateOptions={setPlateOptions}
+            onZoom={(id) => setZoomImgId(id)}
             onNext={() => setStep(1)}
           />
         )}
@@ -118,27 +199,37 @@ export default function App() {
             onEdit={(id) => openEdit(id, 'review')}
             onZoom={(id) => setZoomImgId(id)}
             onNext={(size) => { if (size) setOutputSize(size); setStep(2) }}
-            onBack={() => { resetProcessing(); setStep(0) }}
+            onBack={() => guard(() => { resetProcessing(); setStep(0) }, {
+              title: 'Volver a cargar fotos',
+              message: 'Al volver se van a perder los recortes ya procesados y vas a tener que procesarlos de nuevo. ¿Volver igual?',
+              confirmLabel: 'Volver y borrar',
+              when: hasCutouts,
+            })}
           />
         )}
         {step === 2 && (
           <StepBackground
             images={images} effectiveType={effectiveType}
-            setComposed={setComposed} stats={stats}
+            setComposed={setComposed} stats={stats} removeImage={removeImage}
             onEdit={(id) => openEdit(id, 'background')}
             onZoom={(id) => setZoomImgId(id)}
             onNext={() => setStep(3)}
-            onBack={() => { clearComposed(); setStep(1) }}
+            onBack={() => guard(() => { clearComposed(); setStep(1) }, {
+              title: 'Volver a Revisar',
+              message: 'Al volver se van a quitar los fondos ya aplicados (los recortes se mantienen). ¿Volver igual?',
+              confirmLabel: 'Volver',
+              when: hasComposed,
+            })}
           />
         )}
         {step === 3 && (
           <StepExport
             images={images} effectiveType={effectiveType}
-            outputSize={outputSize}
+            outputSize={outputSize} removeImage={removeImage}
             onEdit={(id) => openEdit(id, 'export')}
             onZoom={(id) => setZoomImgId(id)}
-            onBack={() => setStep(2)} onReset={reset}
-            saveSession={saveSession}
+            onBack={() => setStep(2)} onReset={requestReset}
+            onSaveDraft={() => setShowSaveModal(true)}
           />
         )}
       </main>
@@ -150,6 +241,7 @@ export default function App() {
         sessions={sessions}
         onDelete={deleteSession}
         onLoadSession={loadSession}
+        onContinue={requestContinue}
       />
 
       {/* ── Modal de edición global ── */}
@@ -169,8 +261,49 @@ export default function App() {
 
       {/* ── Modal de zoom ── */}
       {zoomImg && (
-        <ZoomModal img={zoomImg} onClose={() => setZoomImgId(null)} />
+        <ZoomModal
+          img={zoomImg}
+          images={images}
+          onNavigate={(id) => setZoomImgId(id)}
+          onClose={() => setZoomImgId(null)}
+        />
       )}
+
+      {/* ── Guardar borrador (global, desde cualquier etapa) ── */}
+      {showSaveModal && (
+        <SaveDraftModal
+          images={images}
+          saveSession={saveSession}
+          onClose={() => setShowSaveModal(false)}
+        />
+      )}
+
+      {/* ── Confirmación de acciones destructivas ── */}
+      {confirmAction && (
+        <ConfirmDialog
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.confirmLabel}
+          onConfirm={confirmAction.onConfirm}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {/* ── Branding ecosistema (discreto en tablet; en desktop va en el header) ── */}
+      <div className="fixed bottom-1.5 left-2 z-50 hidden md:flex lg:hidden items-center gap-1.5
+        bg-white/70 backdrop-blur-sm px-2 py-1 rounded-md pointer-events-none select-none opacity-80">
+        <span className="text-[9px] text-slate-400">una herramienta de</span>
+        <img src="/brands/logo-autohub.svg" alt="AutoHub" className="h-3.5 w-auto" />
+        <span className="text-slate-300">·</span>
+        <span className="text-[9px] text-slate-400">powered by</span>
+        <img src="/brands/logo-artificialmente-h.svg" alt="Artificialmente" className="h-3 w-auto" />
+      </div>
+
+      {/* ── Versión (esquina inferior) ── */}
+      <div className="fixed bottom-1.5 right-2 z-50 text-[10px] font-medium text-slate-400/80
+        bg-white/70 backdrop-blur-sm px-2 py-0.5 rounded-md pointer-events-none select-none">
+        {APP_VERSION}
+      </div>
     </div>
   )
 }

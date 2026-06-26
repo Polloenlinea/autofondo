@@ -17,7 +17,7 @@ export default function ImageCard({
   const canInteract = img.status !== 'processing'
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+    <div className="group bg-white rounded-2xl border border-slate-200 overflow-hidden">
 
       {/* ── Imagen ── */}
       <div
@@ -52,13 +52,13 @@ export default function ImageCard({
           </div>
         )}
 
-        {/* Botón quitar — siempre visible en mobile */}
+        {/* Botón quitar — siempre visible (intuitivo, no escondido en hover) */}
         {onRemove && (
           <button
             onClick={e => { e.stopPropagation(); onRemove() }}
-            className="absolute top-2 left-2 w-8 h-8 bg-black/60 text-white rounded-xl
-              flex items-center justify-center transition-opacity
-              sm:opacity-0 sm:group-hover:opacity-100 active:bg-black/80"
+            title="Eliminar imagen"
+            className="absolute top-2 left-2 w-8 h-8 bg-black/55 text-white rounded-xl
+              flex items-center justify-center transition-colors hover:bg-red-500 active:bg-red-600"
           >
             <X size={14} strokeWidth={2.5} />
           </button>

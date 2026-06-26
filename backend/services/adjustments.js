@@ -7,8 +7,9 @@ const sharp = require('sharp')
 async function applyAdjustments(buffer, { brightness = 1, contrast = 1, rotation = 0 } = {}) {
   let img = sharp(buffer)
 
-  // Rotación
-  if (rotation !== 0) img = img.rotate(rotation)
+  // Rotación (cualquier ángulo). Fondo transparente para que en ángulos no
+  // múltiplos de 90 las esquinas no queden negras sino transparentes.
+  if (rotation !== 0) img = img.rotate(rotation, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
 
   // Brillo: modulate recibe factor multiplicador (1 = sin cambio)
   if (brightness !== 1) img = img.modulate({ brightness })

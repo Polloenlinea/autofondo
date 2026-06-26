@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   X, RotateCw, RefreshCw, Download, Sun, Contrast,
-  ChevronLeft, ChevronRight, Car, Armchair, Scissors, Zap, AlertTriangle,
+  ChevronLeft, ChevronRight, Scissors,
   LogOut, ImagePlus, Layers,
 } from 'lucide-react'
 import { Btn, Slider, Toggle, Spinner, SectionLabel } from './ui'
@@ -31,19 +31,18 @@ export default function EditModal({
   const [rotation,     setRotation]    = useState(img.adjustments?.rotation   ?? 0)
   const [applying,     setApplying]    = useState(false)
   const [bgMode,       setBgMode]      = useState('checker')
-  const [confirmHQ,    setConfirmHQ]   = useState(false)
   const [maskDirty,    setMaskDirty]   = useState(false)
   const [confirmExit,  setConfirmExit] = useState(false)
 
   // ── Fondo (tab bg) ────────────────────────────────────────────────────────
-  const [bgPreset,    setBgPreset]   = useState(img.bgSettings?.preset  ?? 'white')
+  const [bgPreset,    setBgPreset]   = useState(img.bgSettings?.preset  ?? 'gray')
   const [bgFile,      setBgFile]     = useState(img.bgSettings?.bgFile  ?? null)
   const [bgFileUrl,   setBgFileUrl]  = useState(img.bgSettings?.bgFile ? URL.createObjectURL(img.bgSettings.bgFile) : null)
   const [bgScale,     setBgScale]    = useState(img.bgSettings?.scale   ?? 80)
   const [bgPosX,      setBgPosX]     = useState(img.bgSettings?.posX    ?? 50)
   const [bgPosY,      setBgPosY]     = useState(img.bgSettings?.posY    ?? 60)
   const [bgShadow,     setBgShadow]     = useState(img.bgSettings?.shadow     ?? true)
-  const [bgReflection, setBgReflection] = useState(img.bgSettings?.reflection ?? false)
+  const [bgShadowInt,     setBgShadowInt]     = useState(img.bgSettings?.shadowIntensity     ?? 100)
   const [bgApplying,  setBgApplying] = useState(false)
 
   const currentIdx = images.findIndex(i => i.id === img.id)
@@ -58,15 +57,14 @@ export default function EditModal({
     setTab('adjust')
     setMaskDirty(false)
     setConfirmExit(false)
-    setConfirmHQ(false)
-    setBgPreset(img.bgSettings?.preset ?? 'white')
+    setBgPreset(img.bgSettings?.preset ?? 'gray')
     setBgFile(img.bgSettings?.bgFile   ?? null)
     setBgFileUrl(img.bgSettings?.bgFile ? URL.createObjectURL(img.bgSettings.bgFile) : null)
     setBgScale(img.bgSettings?.scale   ?? 80)
     setBgPosX(img.bgSettings?.posX     ?? 50)
     setBgPosY(img.bgSettings?.posY     ?? 60)
     setBgShadow(img.bgSettings?.shadow ?? true)
-    setBgReflection(img.bgSettings?.reflection ?? false)
+    setBgShadowInt(img.bgSettings?.shadowIntensity ?? 100)
   }, [img.id])
 
   const handleAttemptClose = useCallback((arg) => {
@@ -98,7 +96,9 @@ export default function EditModal({
   }
 
   const handleReset  = () => { setBrightness(1); setContrast(1); setRotation(0) }
-  const handleRotate = () => setRotation(r => (r + 90) % 360)
+  // Normaliza a (-180, 180] para que el slider y el botón de 90° queden sincronizados
+  const normDeg = (d) => { const r = (((d + 180) % 360) + 360) % 360 - 180; return r === -180 ? 180 : r }
+  const handleRotate = () => setRotation(r => normDeg(r + 90))
 
   const handleMaskSave = useCallback(async (newB64) => {
     setApplying(true)
@@ -122,13 +122,12 @@ export default function EditModal({
       posX:    bgPosX,
       posY:    bgPosY,
       shadow:  bgShadow,
-      reflection: bgReflection && !!img.horizontal,
+      shadowIntensity: bgShadowInt,
     }
     await onRecompose(img.id, cfg)
     setBgApplying(false)
   }
 
-  const type         = effectiveType(img)
   const previewFilter = `brightness(${brightness}) contrast(${contrast})`
   const previewTransform = rotation ? `rotate(${rotation}deg)` : undefined
   const bgClass      = bgMode === 'checker' ? 'checker' : bgMode === 'white' ? 'bg-white' : 'bg-slate-900'
@@ -197,6 +196,7 @@ export default function EditModal({
             <MaskEditor
               cutoutB64={resultB64}
               originalUrl={img.previewUrl}
+              restoreOffset={img.offset}
               onSave={(b64) => { setMaskDirty(false); handleMaskSave(b64) }}
               onCancel={() => {
                 if (maskDirty) { setConfirmExit(true) } else { setTab('adjust') }
@@ -261,7 +261,7 @@ export default function EditModal({
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
                         <span className="opacity-0 group-hover:opacity-100 text-white text-xs font-semibold bg-black/60 px-2 py-1 rounded transition-opacity">Cambiar</span>
                       </div>
-                      <button onClick={e => { e.preventDefault(); setBgFile(null); setBgFileUrl(null); setBgPreset('white') }}
+                      <button onClick={e => { e.preventDefault(); setBgFile(null); setBgFileUrl(null); setBgPreset('gray') }}
                         className="absolute top-1.5 right-1.5 w-5 h-5 bg-black/60 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                         <X size={10} />
                       </button>
@@ -281,8 +281,8 @@ export default function EditModal({
               <Slider label="Posición horizontal" value={bgPosX}  min={0}  max={100} unit="%" onChange={setBgPosX} />
               <Slider label="Posición vertical"   value={bgPosY}  min={0}  max={100} unit="%" onChange={setBgPosY} />
               <Toggle label="Sombra bajo el auto" value={bgShadow} onChange={setBgShadow} />
-              {img.horizontal && (
-                <Toggle label="Reflejo (autos de perfil)" value={bgReflection} onChange={setBgReflection} />
+              {bgShadow && (
+                <Slider label="Intensidad de la sombra" value={bgShadowInt} min={0} max={100} unit="%" onChange={setBgShadowInt} />
               )}
             </div>
 
@@ -338,22 +338,6 @@ export default function EditModal({
 
             <div className="px-4 pb-4 space-y-5">
 
-              {/* Clasificación */}
-              <div className="flex items-center justify-between py-3 border-t border-slate-100">
-                <div className="flex items-center gap-2">
-                  {type === 'exterior'
-                    ? <Car size={14} className="text-blue-700" strokeWidth={2} />
-                    : <Armchair size={14} className="text-slate-500" strokeWidth={2} />}
-                  <span className="text-sm font-medium text-slate-700">
-                    {type === 'exterior' ? 'Exterior — se recorta el fondo' : 'Interior — sin recorte'}
-                  </span>
-                </div>
-                <button onClick={() => onToggleType(img.id)}
-                  className="text-xs font-medium text-blue-700 hover:text-blue-800 underline underline-offset-2">
-                  cambiar
-                </button>
-              </div>
-
               {/* Ajustes de imagen */}
               {resultB64 && (
                 <div className="space-y-4 border-t border-slate-100 pt-4">
@@ -390,62 +374,34 @@ export default function EditModal({
                       </span>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <button onClick={handleRotate}
-                      className="flex items-center gap-2 text-sm font-medium text-slate-600
-                        hover:text-blue-700 bg-slate-50 hover:bg-blue-50 px-3 py-2 rounded-lg
-                        transition-colors border border-slate-200">
-                      <RotateCw size={14} /> Rotar 90°
-                    </button>
-                    {rotation !== 0 && <span className="text-xs text-slate-400">{rotation}° aplicado</span>}
+                  <div className="space-y-3 pt-1">
+                    <div className="flex items-center gap-2">
+                      <button onClick={handleRotate}
+                        className="flex items-center gap-2 text-sm font-medium text-slate-600
+                          hover:text-blue-700 bg-slate-50 hover:bg-blue-50 px-3 py-2 rounded-lg
+                          transition-colors border border-slate-200">
+                        <RotateCw size={14} /> Rotar 90°
+                      </button>
+                      {rotation !== 0 && (
+                        <button onClick={() => setRotation(0)}
+                          className="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-1">
+                          <RefreshCw size={11} /> {rotation}° · enderezar
+                        </button>
+                      )}
+                    </div>
+                    {/* Rotación fina personalizada (cualquier ángulo) */}
+                    <div className="flex items-center gap-3">
+                      <RotateCw size={14} className="text-slate-400 flex-shrink-0" />
+                      <div className="flex-1">
+                        <Slider label="Rotación" value={rotation} min={-180} max={180} unit="°"
+                          onChange={v => setRotation(normDeg(v))} />
+                      </div>
+                      <span className="text-xs tabular-nums text-slate-400 w-10 text-right">{rotation}°</span>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Re-procesar con modelo large */}
-              <div className="border-t border-slate-100 pt-4">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Corrección IA</p>
-                {!confirmHQ ? (
-                  <>
-                    <button onClick={() => setConfirmHQ(true)}
-                      disabled={img.status === 'processing'}
-                      className="flex items-center gap-2 text-sm font-medium text-slate-600
-                        hover:text-blue-700 bg-slate-50 hover:bg-blue-50 px-3 py-2 rounded-lg
-                        transition-colors border border-slate-200 disabled:opacity-40">
-                      <Zap size={14} /> Reprocesar en alta calidad
-                    </button>
-                    <p className="text-xs text-slate-400 mt-1.5">
-                      Usa el modelo más preciso para bordes difíciles
-                    </p>
-                  </>
-                ) : (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2.5">
-                    <div className="flex gap-2">
-                      <AlertTriangle size={15} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-amber-800">¿Confirmar reprocesado?</p>
-                        <p className="text-xs text-amber-700 leading-relaxed">
-                          Esta función emplea un modelo de alta calidad que puede tardar <strong>hasta 60 segundos</strong> y
-                          consume significativamente más recursos. Usalo solo cuando el recorte estándar no haya quedado bien.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => setConfirmHQ(false)}
-                        className="flex-1 text-xs font-semibold text-slate-600 bg-white border border-slate-200
-                          px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors">
-                        Cancelar
-                      </button>
-                      <button
-                        onClick={() => { setConfirmHQ(false); onReprocess(img.id, { model: 'large' }); onClose() }}
-                        className="flex-1 flex items-center justify-center gap-1.5 text-xs font-semibold
-                          text-white bg-amber-600 hover:bg-amber-700 px-3 py-2 rounded-lg transition-colors">
-                        <Zap size={12} /> Sí, reprocesar
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         )}

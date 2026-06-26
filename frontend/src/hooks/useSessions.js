@@ -28,11 +28,26 @@ export function useSessions() {
     const processedImages = (images || []).filter(i => i.composedB64 || i.cutoutB64)
     if (!processedImages.length) return null
 
-    const payload = processedImages.map(img => ({
-      fileName:    img.file?.name || 'imagen.jpg',
-      composedB64: img.composedB64 || null,
-      cutoutB64:   img.cutoutB64   || null,
-    }))
+    const payload = processedImages.map(img => {
+      // bgSettings sin el File de fondo personalizado (no se serializa); guardamos
+      // si tenía un fondo custom para avisar al retomar.
+      let bg = null
+      if (img.bgSettings) {
+        const { bgFile, ...rest } = img.bgSettings
+        bg = { ...rest, bgFile: null, hadCustomBg: !!bgFile }
+      }
+      return {
+        fileName:     img.file?.name || 'imagen.jpg',
+        composedB64:  img.composedB64 || null,
+        cutoutB64:    img.cutoutB64   || null,
+        detectedType: img.detectedType || 'exterior',
+        typeOverride: img.typeOverride ?? null,
+        level:        img.level !== false,
+        offset:       img.offset ?? null,
+        adjustments:  img.adjustments ?? null,
+        bgSettings:   bg,
+      }
+    })
 
     const data = await api.saveSession(name, payload)
     if (!data.ok) throw new Error(data.error || 'Error al guardar sesión')

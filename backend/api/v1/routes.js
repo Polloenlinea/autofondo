@@ -4,7 +4,10 @@ const upload   = require('../../middleware/upload')
 const { detectImageType }            = require('../../services/detection')
 const { removeBg }                   = require('../../services/bgRemoval')
 const { censorPlate, applyPlateCensor } = require('../../services/plateCensor')
-const { compose, generatePresetBg, isHorizontal } = require('../../services/composition')
+const { compose, generatePresetBg, isLevel } = require('../../services/composition')
+const { photoroomShadow } = require('../../services/photoroomShadow')
+const { photoroomScene }  = require('../../services/photoroomScene')
+const usage = require('../../services/usage')
 const { applyAdjustments, resizeOutput } = require('../../services/adjustments')
 const Session    = require('../../models/Session')
 const BgHistory  = require('../../models/BgHistory')
@@ -20,6 +23,10 @@ const jsonLarge = express.json({ limit: '80mb' })
 
 // ── Health ────────────────────────────────────────────────────────────────────
 router.get('/health', (_req, res) => res.json({ ok: true, version: '1.0.0' }))
+
+// ── Contador local de uso de Photoroom (estimación de gasto) ────────────────────
+router.get('/usage', (_req, res) => res.json({ ok: true, ...usage.get() }))
+router.post('/usage/reset', (_req, res) => { usage.reset(); res.json({ ok: true, ...usage.get() }) })
 
 // ── Detectar tipo de imagen (exterior / interior) ─────────────────────────────
 router.post('/detect', upload.single('file'), async (req, res) => {
@@ -46,11 +53,13 @@ router.post('/remove-bg', upload.fields([
     const carFile = fileArr[0]
     console.log(`[remove-bg] ${carFile.originalname} ${Math.round(carFile.size / 1024)}KB`)
 
-    // 1. Quitar fondo (model=large solo para reprocesado individual de alta calidad)
-    const allowedModels = ['small', 'medium', 'large']
+    // 1. Quitar fondo — motor seleccionable (@imgly rápido / BiRefNet calidad)
+    const allowedModels  = ['small', 'medium', 'large']
+    const allowedEngines = ['imgly', 'birefnet-lite', 'birefnet-full']
     const modelOverride = allowedModels.includes(req.body.model) ? req.body.model : null
-    if (modelOverride) console.log(`[remove-bg] modelo override: ${modelOverride}`)
-    let { buffer: resultBuf, offset } = await removeBg(carFile.buffer, modelOverride)
+    const engine = allowedEngines.includes(req.body.engine) ? req.body.engine : 'imgly'
+    console.log(`[remove-bg] motor: ${engine}${modelOverride ? ` (modelo ${modelOverride})` : ''}`)
+    let { buffer: resultBuf, offset } = await removeBg(carFile.buffer, { model: modelOverride, engine })
 
     // 2. Censurar matrícula (si se pidió)
     const hidePlate = req.body.hidePlate === 'true'
@@ -72,9 +81,12 @@ router.post('/remove-bg', upload.fields([
       }
     }
 
-    const horizontal = await isHorizontal(resultBuf)
+    // ¿Apoya nivelado? (sombra/reflejo solo en fotos rectas; en 3/4 se omiten y se avisa)
+    const level = await isLevel(resultBuf)
 
-    res.json({ ok: true, image: resultBuf.toString('base64'), horizontal })
+    // offset {dx,dy}: cuánto se recentró el auto respecto de la foto original.
+    // Lo necesita el editor de máscara para alinear la herramienta "Restaurar".
+    res.json({ ok: true, image: resultBuf.toString('base64'), level, offset: offset || { dx: 0, dy: 0 } })
   } catch (e) {
     console.error('[remove-bg]', e.message)
     res.status(500).json({ ok: false, error: e.message })
@@ -85,10 +97,33 @@ router.post('/remove-bg', upload.fields([
 router.post('/compose', upload.fields([
   { name: 'car',        maxCount: 1 },
   { name: 'background', maxCount: 1 },
+  { name: 'guidance',   maxCount: 1 },   // imagen de referencia para consistencia IA
 ]), async (req, res) => {
   try {
     const carFile = req.files?.car?.[0]
     const bgFile  = req.files?.background?.[0]
+
+    if (!carFile) return res.status(400).json({ ok: false, error: 'Falta el auto (car)' })
+
+    // Mejoras IA opcionales (viajan en la misma llamada a Photoroom, sin costo extra)
+    const upscale = req.body.upscale === 'true'
+    const relight = req.body.relight === 'true'
+
+    // ── Fondo generado por IA (Photoroom AI Backgrounds) ──────────────────────
+    // Si viene un prompt de escena, Photoroom arma toda la composición (auto +
+    // escena + luz + sombra + reflejo). Devolvemos eso directo.
+    const bgPrompt = (req.body.bg_prompt || '').trim()
+    if (bgPrompt) {
+      const seed          = req.body.seed || null
+      const guidanceFile  = req.files?.guidance?.[0]
+      const scene = await photoroomScene(carFile.buffer, bgPrompt, {
+        upscale, relight, seed, guidanceBuffer: guidanceFile?.buffer || null,
+      })
+      if (!scene) {
+        return res.status(502).json({ ok: false, error: 'No se pudo generar el fondo IA (revisá el cupo/plan de Photoroom)' })
+      }
+      return res.json({ ok: true, image: scene.toString('base64') })
+    }
 
     let bgBuffer
     if (bgFile) {
@@ -99,16 +134,36 @@ router.post('/compose', upload.fields([
       return res.status(400).json({ ok: false, error: 'Falta el fondo (archivo o preset)' })
     }
 
-    if (!carFile) return res.status(400).json({ ok: false, error: 'Falta el auto (car)' })
+    let carBuffer  = carFile.buffer
+    let shadow     = req.body.shadow === 'true'
+    let reflection = req.body.reflection === 'true'
+
+    // Edición por IA (Photoroom): sombra apoyada + (opcional) upscale/relight,
+    // todo sobre transparente, usado como capa del auto. Una sola llamada cubre
+    // las tres cosas. Si la API falla y se pidió sombra, caemos a la interna.
+    if (shadow || upscale || relight) {
+      const mode = ['ai.soft', 'ai.hard', 'ai.floating'].includes(req.body.shadow_mode)
+        ? req.body.shadow_mode : 'ai.soft'
+      const edited = await photoroomShadow(carFile.buffer, { mode, withShadow: shadow, upscale, relight })
+      if (edited) {
+        carBuffer = edited        // auto editado (con sombra horneada si withShadow)
+        if (shadow) {
+          shadow     = false      // sombra ya horneada → no aplicar la interna
+          reflection = false      // evitar reflejar la sombra (se mezclarían mal)
+        }
+      }
+    }
 
     const result = await compose({
-      carBuffer: carFile.buffer,
+      carBuffer,
       bgBuffer,
       scale:     parseFloat(req.body.scale  ?? 80),
       posX:      parseFloat(req.body.pos_x  ?? 50),
       posY:      parseFloat(req.body.pos_y  ?? 60),
-      shadow:    req.body.shadow === 'true',
-      reflection: req.body.reflection === 'true',
+      shadow,
+      reflection,
+      shadowIntensity:     parseFloat(req.body.shadow_intensity     ?? 100),
+      reflectionIntensity: parseFloat(req.body.reflection_intensity ?? 100),
     })
 
     res.json({ ok: true, image: result.toString('base64') })
@@ -246,6 +301,13 @@ router.post('/sessions', jsonLarge, async (req, res) => {
         composedB64: img.composedB64 || null,
         cutoutB64:   img.cutoutB64   || null,
         isComposed:  !!img.composedB64,
+        // Estado de trabajo para retomar el borrador
+        detectedType: img.detectedType || 'exterior',
+        typeOverride: img.typeOverride ?? null,
+        level:        img.level !== false,
+        offset:       img.offset      ?? null,
+        adjustments:  img.adjustments ?? null,
+        bgSettings:   img.bgSettings  ?? null,
       })),
     })
 

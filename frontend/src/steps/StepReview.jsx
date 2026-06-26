@@ -278,7 +278,7 @@ export default function StepReview({
           )}
 
           <Btn variant="primary" size="full" disabled={!canContinue} onClick={() => onNext(outputSize)}>
-            {canContinue ? 'Agregar fondo' : <><Spinner size="sm" /> Procesando…</>}
+            {canContinue ? 'Siguiente: elegir fondos →' : <><Spinner size="sm" /> Procesando…</>}
           </Btn>
         </div>
       </div>

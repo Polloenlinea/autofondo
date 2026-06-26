@@ -1,3 +1,12 @@
+// Cargar variables de entorno desde .env (PHOTOROOM_API_KEY, etc.) — nativo de Node 20.6+
+try { process.loadEnvFile() } catch { /* sin .env: se usan defaults */ }
+
+// Limitar la memoria nativa de sharp (libvips) para que NO se acumule a lo largo
+// de un lote grande y termine matando el proceso. Sin caché y de a una operación.
+const sharp = require('sharp')
+sharp.cache(false)
+sharp.concurrency(1)
+
 const express    = require('express')
 const cors       = require('cors')
 const path       = require('path')

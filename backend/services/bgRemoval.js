@@ -23,27 +23,70 @@ async function warmup() {
   }
 }
 
-// modelOverride permite usar 'large' para reprocesado de alta calidad individual
-async function removeBg(buffer, modelOverride = null) {
+// opts: { model?: 'small'|'medium'|'large', engine?: 'imgly'|'birefnet-lite'|'birefnet-full' }
+// Compat: si se pasa un string, se interpreta como modelOverride de @imgly.
+async function removeBg(buffer, opts = null) {
   const sharp  = require('sharp')
+  const { model: modelOverride = null, engine = 'imgly' } =
+    typeof opts === 'string' ? { model: opts } : (opts || {})
 
   // Dimensiones originales para reconstruir el canvas
   const { width: origW, height: origH } = await sharp(buffer).metadata()
 
-  const blob   = new Blob([buffer], { type: 'image/png' })
-  const result = await removeBackground(blob, {
-    model:  modelOverride || MODEL,
-    output: { format: 'image/png', quality: 1.0 },
-  })
-  const rawResult = Buffer.from(await result.arrayBuffer())
+  let rawResult
+  let isBiRefNet = false
+  if (engine === 'birefnet-lite' || engine === 'birefnet-full') {
+    // ── Motor BiRefNet (mejor calidad de borde) ──
+    const { removeBgBiRefNet } = require('../ml/birefnet')
+    rawResult = await removeBgBiRefNet(buffer, engine === 'birefnet-full' ? 'full' : 'lite')
+    isBiRefNet = true
+  } else {
+    // ── Motor @imgly (rápido) ──
+    const blob   = new Blob([buffer], { type: 'image/png' })
+    const result = await removeBackground(blob, {
+      model:  modelOverride || MODEL,
+      output: { format: 'image/png', quality: 1.0 },
+    })
+    rawResult = Buffer.from(await result.arrayBuffer())
+  }
 
-  // Corregir píxeles semi-transparentes en la carrocería: el modelo a veces
-  // deja alpha ~150-240 en paneles metálicos. Forzar a opaco si alpha > 180.
+  // Corregir píxeles semi-transparentes en la carrocería: SOLO para @imgly, que
+  // deja alpha ~150-240 en paneles metálicos. BiRefNet ya da una máscara limpia,
+  // así que NO la endurecemos (preserva el anti-aliasing fino de sus bordes).
   const { data: px, info: pxInfo } = await sharp(rawResult)
     .ensureAlpha().raw().toBuffer({ resolveWithObject: true })
-  for (let i = 3; i < px.length; i += 4) {
-    if (px[i] > 128) px[i] = 255   // umbral más agresivo: mayoría de la carrocería → opaco
+  if (!isBiRefNet) {
+    for (let i = 3; i < px.length; i += 4) {
+      if (px[i] > 128) px[i] = 255   // umbral agresivo: mayoría de la carrocería → opaco
+    }
   }
+
+  // ── Defringe por DECONTAMINACIÓN DE COLOR (anti-reborde) ─────────────────────
+  // Los píxeles del borde anti-aliased conservan el color del FONDO ORIGINAL (p.ej.
+  // claro, de un estudio). Al componer sobre otro fondo se ven como un halo alrededor
+  // del auto. En vez de borrar el borde (erosión → encoge el auto y come detalles),
+  // REEMPLAZAMOS el color contaminado por el del vecino más opaco (color de la
+  // carrocería), repetido DEFRINGE_ITERS veces. El ALPHA NO se toca → el auto NO se
+  // encoge, el suavizado se conserva, y el halo desaparece. Subí DEFRINGE_ITERS si
+  // alguna foto (fondo muy claro/borroso) dejara algo de halo. Probar es gratis.
+  const DEFRINGE_ITERS = 4
+  const W = pxInfo.width, H = pxInfo.height
+  for (let it = 0; it < DEFRINGE_ITERS; it++) {
+    const snap = Buffer.from(px)
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const p = (y * W + x) * 4
+        if (snap[p + 3] >= 250) continue   // núcleo opaco: no tocar
+        let bestA = snap[p + 3], br = snap[p], bg = snap[p + 1], bb = snap[p + 2], found = false
+        if (x > 0     && snap[p - 4 + 3] > bestA) { bestA = snap[p - 4 + 3]; br = snap[p - 4]; bg = snap[p - 3]; bb = snap[p - 2]; found = true }
+        if (x < W - 1 && snap[p + 4 + 3] > bestA) { bestA = snap[p + 4 + 3]; br = snap[p + 4]; bg = snap[p + 5]; bb = snap[p + 6]; found = true }
+        if (y > 0     && snap[p - W * 4 + 3] > bestA) { bestA = snap[p - W * 4 + 3]; br = snap[p - W * 4]; bg = snap[p - W * 4 + 1]; bb = snap[p - W * 4 + 2]; found = true }
+        if (y < H - 1 && snap[p + W * 4 + 3] > bestA) { bestA = snap[p + W * 4 + 3]; br = snap[p + W * 4]; bg = snap[p + W * 4 + 1]; bb = snap[p + W * 4 + 2]; found = true }
+        if (found) { px[p] = br; px[p + 1] = bg; px[p + 2] = bb }  // copia color, mantiene alpha
+      }
+    }
+  }
+
   const raw = await sharp(px, { raw: { width: pxInfo.width, height: pxInfo.height, channels: 4 } })
     .png().toBuffer()
 

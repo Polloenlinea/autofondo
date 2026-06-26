@@ -1,47 +1,73 @@
 import { useState } from 'react'
-import { Download, Archive, RotateCcw, Lock, Upload, Globe, Save, Check, Pencil, ZoomIn, Share2 } from 'lucide-react'
+import { Download, Archive, RotateCcw, Lock, Save, Pencil, ZoomIn, X } from 'lucide-react'
 import JSZip from 'jszip'
 import { Btn, Card, SectionLabel, Spinner } from '../components/ui'
 import WatermarkPanel from '../components/WatermarkPanel'
-import { applyWatermarkToB64 } from '../utils/watermark'
+import { applyWatermarkToB64, averageBrightnessB64 } from '../utils/watermark'
 
 const DEFAULT_WM = {
-  logoFile: null, logoUrl: null, logoImg: null,
+  logoFile: null, logoUrl: null, logoImg: null,            // logo principal (oscuro, para fondos claros)
+  logoFileLight: null, logoUrlLight: null, logoImgLight: null, // versión clara (para fondos oscuros)
+  autoContrast: false,                                     // elegir logo según brillo del fondo
   position: 'bottom-right', sizePercent: 15, opacity: 0.75,
   enabled: false,
 }
 
-const SYSTEMS = [
-  { id: 'usados',  label: 'Sistema de Usados', shortLabel: 'Usados', icon: Upload, color: 'text-blue-400'   },
-  { id: 'web',     label: 'Multipost',         shortLabel: 'Multipost', icon: Globe,  color: 'text-violet-400' },
-  { id: 'social',  label: 'Redes sociales',    shortLabel: 'Redes', icon: Share2, color: 'text-pink-400'   },
+// Destinos de publicación (próximamente) — se muestran desactivados para que se
+// conozca la opción. Logos isotipo de cada producto del ecosistema.
+const PUBLISH = [
+  { id: 'multipost', label: 'Multipost', iso: '/brands/iso-multipost.png' },
+  { id: 'autoferta', label: 'Autoferta', iso: '/brands/iso-autoferta.png' },
 ]
 
-export default function StepExport({ images, effectiveType, outputSize, onEdit, onZoom, onBack, onReset, saveSession }) {
+export default function StepExport({ images, effectiveType, outputSize, removeImage, onEdit, onZoom, onBack, onReset, onSaveDraft }) {
   const [wm,          setWm]          = useState(DEFAULT_WM)
   const [downloading, setDownloading] = useState(false)
   const [dlProgress,  setDlProgress]  = useState(0)
-  const [showSaveModal, setShowSaveModal] = useState(false)
-  const [sessionName,   setSessionName]   = useState('')
-  const [savedMsg,      setSavedMsg]      = useState(false)
-  const [saveError,     setSaveError]     = useState(null)
-  const [saving,        setSaving]        = useState(false)
 
-  const processedImages = images.filter(img =>
-    effectiveType(img) !== 'interior' && (img.composedB64 || img.cutoutB64)
-  )
+  // TODAS las fotos del lote: exteriores (con/sin fondo) + interiores (originales).
+  // Para una publicación se descargan todas, con marca de agua en todas.
+  const exportImages = images.filter(img => img.composedB64 || img.cutoutB64 || img.previewUrl)
   const withBg     = images.filter(i => i.composedB64).length
-  const cutoutOnly = images.filter(i => i.cutoutB64 && !i.composedB64).length
   const interior   = images.filter(i => effectiveType(i) === 'interior').length
 
-  const imgSrc  = (img) => img.composedB64 || img.cutoutB64
-  const imgMime = (img) => img.composedB64 ? 'jpeg' : 'png'
-  const imgExt  = (img) => img.composedB64 ? 'jpg'  : 'png'
-  const imgName = (img) => img.file.name.replace(/\.[^.]+$/, '') + `_af.${imgExt(img)}`
+  // Origen para MOSTRAR (URL lista para <img src>)
+  const displaySrc = (img) =>
+    img.composedB64 ? `data:image/jpeg;base64,${img.composedB64}`
+    : img.cutoutB64  ? `data:image/png;base64,${img.cutoutB64}`
+    : img.previewUrl
+  const isCheckerCard = (img) => !!img.cutoutB64 && !img.composedB64
+
+  // File → base64 (para interiores / fotos sin procesar, que se leen del original)
+  const fileToB64 = (file) => new Promise((resolve, reject) => {
+    const r = new FileReader()
+    r.onload  = () => resolve(String(r.result).split(',')[1])
+    r.onerror = reject
+    r.readAsDataURL(file)
+  })
+
+  // Origen REAL (base64 + mime) para descargar/marca de agua — async por los interiores
+  const getSource = async (img) => {
+    if (img.composedB64) return { b64: img.composedB64, mime: 'jpeg', ext: 'jpg' }
+    if (img.cutoutB64)   return { b64: img.cutoutB64,   mime: 'png',  ext: 'png' }
+    const b64   = await fileToB64(img.file)
+    const isPng = (img.file?.type || '').includes('png')
+    return { b64, mime: isPng ? 'png' : 'jpeg', ext: isPng ? 'png' : 'jpg' }
+  }
+
+  const imgName = (img, ext) => img.file.name.replace(/\.[^.]+$/, '') + `_af.${ext}`
 
   const withWatermark = async (b64, mime) => {
-    if (!wm.enabled || !wm.logoImg) return b64
-    return applyWatermarkToB64(b64, mime, wm.logoImg, {
+    if (!wm.enabled) return b64
+    // Elegir logo: si está el modo auto y hay ambas versiones, elegir según el
+    // brillo del fondo (logo oscuro sobre fondos claros, claro sobre oscuros).
+    let logo = wm.logoImg || wm.logoImgLight
+    if (wm.autoContrast && wm.logoImg && wm.logoImgLight) {
+      const brightness = await averageBrightnessB64(b64, mime)
+      logo = brightness < 130 ? wm.logoImgLight : wm.logoImg
+    }
+    if (!logo) return b64
+    return applyWatermarkToB64(b64, mime, logo, {
       position:    wm.position,
       sizePercent: wm.sizePercent,
       opacity:     wm.opacity,
@@ -49,25 +75,26 @@ export default function StepExport({ images, effectiveType, outputSize, onEdit, 
   }
 
   const downloadOne = async (img) => {
-    const b64  = await withWatermark(imgSrc(img), imgMime(img))
-    const mime = imgMime(img)
-    const a    = document.createElement('a')
-    a.href     = `data:image/${mime};base64,${b64}`
-    a.download = imgName(img)
+    const { b64, mime, ext } = await getSource(img)
+    const final = await withWatermark(b64, mime)
+    const a = document.createElement('a')
+    a.href = `data:image/${mime};base64,${final}`
+    a.download = imgName(img, ext)
     a.click()
   }
 
   const downloadAll = async () => {
-    if (!processedImages.length) return
+    if (!exportImages.length) return
     setDownloading(true)
     setDlProgress(0)
     const zip  = new JSZip()
     let done   = 0
-    for (const img of processedImages) {
-      const b64 = await withWatermark(imgSrc(img), imgMime(img))
-      zip.file(imgName(img), b64, { base64: true })
+    for (const img of exportImages) {
+      const { b64, mime, ext } = await getSource(img)
+      const final = await withWatermark(b64, mime)
+      zip.file(imgName(img, ext), final, { base64: true })
       done++
-      setDlProgress(Math.round(done / processedImages.length * 100))
+      setDlProgress(Math.round(done / exportImages.length * 100))
     }
     const blob = await zip.generateAsync({ type: 'blob' })
     const a    = document.createElement('a')
@@ -75,24 +102,6 @@ export default function StepExport({ images, effectiveType, outputSize, onEdit, 
     a.download = `autofondo-${Date.now()}.zip`
     a.click()
     setDownloading(false)
-  }
-
-  const handleSaveSession = async () => {
-    setSaveError(null)
-    setSaving(true)
-    try {
-      if (saveSession) {
-        await saveSession(sessionName, images)
-      }
-      setShowSaveModal(false)
-      setSessionName('')
-      setSavedMsg(true)
-      setTimeout(() => setSavedMsg(false), 4000)
-    } catch (err) {
-      setSaveError(err.message || 'Error al guardar — revisá la conexión')
-    } finally {
-      setSaving(false)
-    }
   }
 
   return (
@@ -103,9 +112,9 @@ export default function StepExport({ images, effectiveType, outputSize, onEdit, 
         <SectionLabel>Resumen</SectionLabel>
         <div className="divide-y divide-slate-100">
           {[
-            { label: 'Con fondo aplicado',        value: withBg,     show: withBg > 0     },
-            { label: 'Solo recorte (sin fondo)',   value: cutoutOnly, show: cutoutOnly > 0 },
-            { label: 'Interiores (sin procesar)',  value: interior,   show: interior > 0   },
+            { label: 'Con fondo aplicado',          value: withBg,               show: withBg > 0   },
+            { label: 'Interiores (originales)',     value: interior,             show: interior > 0 },
+            { label: 'Total a descargar',           value: exportImages.length,  show: true         },
           ].filter(r => r.show).map(row => (
             <div key={row.label} className="flex items-center justify-between py-2.5">
               <span className="text-sm text-slate-600">{row.label}</span>
@@ -120,16 +129,26 @@ export default function StepExport({ images, effectiveType, outputSize, onEdit, 
 
       {/* ── Grid de resultados ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {processedImages.map(img => {
-          const src  = imgSrc(img)
-          const mime = imgMime(img)
+        {exportImages.map(img => {
+          const src = displaySrc(img)
           return (
             <div key={img.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden group">
-              <div className={`aspect-[4/3] overflow-hidden relative ${img.composedB64 ? 'bg-slate-100' : 'checker'}
+              <div className={`aspect-[4/3] overflow-hidden relative ${isCheckerCard(img) ? 'checker' : 'bg-slate-100'}
                 ${onZoom ? 'cursor-zoom-in' : ''}`}
                 onClick={onZoom ? () => onZoom(img.id) : undefined}>
-                <img src={`data:image/${mime};base64,${src}`}
+                <img src={src}
                   className="w-full h-full object-contain" />
+
+                {/* Eliminar — siempre visible */}
+                {removeImage && (
+                  <button
+                    onClick={e => { e.stopPropagation(); removeImage(img.id) }}
+                    title="Eliminar imagen"
+                    className="absolute top-2 left-2 w-7 h-7 bg-black/55 text-white rounded-lg
+                      flex items-center justify-center transition-colors hover:bg-red-500 active:bg-red-600 z-10">
+                    <X size={13} strokeWidth={2.5} />
+                  </button>
+                )}
                 {/* Hover overlay */}
                 {onZoom && (
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors
@@ -172,22 +191,6 @@ export default function StepExport({ images, effectiveType, outputSize, onEdit, 
                     border border-slate-200 min-h-[40px] sm:min-h-0">
                   <Download size={11} /> Descargar
                 </button>
-
-                {/* Sistemas externos por imagen — solo desktop, en mobile ya están en la barra inferior */}
-                <div className="hidden sm:flex gap-1">
-                  {SYSTEMS.map(sys => (
-                    <button key={sys.id} disabled
-                      title={`${sys.label} — próximamente`}
-                      className="flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg
-                        border border-slate-100 bg-slate-50 cursor-not-allowed">
-                      <sys.icon size={10} className={`${sys.color} opacity-50`} />
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        {sys.id === 'usados' ? 'Usados' : sys.id === 'web' ? 'Web' : 'Redes'}
-                      </span>
-                      <Lock size={8} className="text-slate-300" />
-                    </button>
-                  ))}
-                </div>
               </div>
             </div>
           )
@@ -198,42 +201,35 @@ export default function StepExport({ images, effectiveType, outputSize, onEdit, 
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 px-4 py-3 pb-safe">
         <div className="max-w-2xl mx-auto space-y-2">
 
-          {/* Toast guardado */}
-          {savedMsg && (
-            <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700 font-medium">
-              <Check size={13} /> Lote guardado en el historial
-            </div>
-          )}
-
-          {/* Descarga masiva — CTA principal */}
-          <Btn variant="primary" size="full" onClick={downloadAll}
-            disabled={downloading || !processedImages.length}>
+          {/* Acciones principales — MISMO peso: Descargar (activo) + Publicar
+              (próximamente, desactivados). Apiladas, todas del mismo tamaño. */}
+          <button onClick={downloadAll}
+            disabled={downloading || !exportImages.length}
+            className="w-full relative flex items-center justify-center gap-2 py-3 rounded-xl min-h-[50px]
+              bg-blue-700 text-white text-sm font-semibold hover:bg-blue-800
+              disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
             {downloading
               ? <><Spinner size="sm" /> Generando ZIP… {dlProgress}%</>
-              : <><Archive size={14} /> Descargar todo ({processedImages.length}){wm.enabled ? ' + logo' : ''}</>}
-          </Btn>
+              : <><Archive size={16} /> Descargar todo ({exportImages.length}){wm.enabled ? ' + logo' : ''}</>}
+          </button>
 
-          {/* Guardar lote — fila propia, ancho completo en mobile */}
-          <Btn variant="secondary" size="full" className="sm:w-auto" onClick={() => setShowSaveModal(true)}>
-            <Save size={14} /> Guardar lote
-          </Btn>
+          {PUBLISH.map(p => (
+            <button key={p.id} disabled
+              title={`Publicar en ${p.label} — próximamente`}
+              className="w-full relative flex items-center justify-center gap-2 py-3 rounded-xl min-h-[50px]
+                border border-slate-200 bg-slate-50 text-slate-500 text-sm font-semibold cursor-not-allowed">
+              <img src={p.iso} alt="" className="w-5 h-5 object-contain opacity-60 flex-shrink-0" />
+              <span>Publicar en {p.label}</span>
+              <span className="absolute top-1.5 right-2.5 flex items-center gap-0.5 text-[8px] font-bold uppercase tracking-wider text-slate-400">
+                <Lock size={8} /> Pronto
+              </span>
+            </button>
+          ))}
 
-          {/* Sistemas externos — fila propia en grilla pareja, nunca se aprietan */}
-          <div className="grid grid-cols-3 gap-2">
-            {SYSTEMS.map(sys => (
-              <button key={sys.id} disabled
-                title={`${sys.label} — próximamente`}
-                className="flex items-center justify-center gap-1 py-2.5 rounded-xl min-h-[44px]
-                  border border-slate-200 bg-slate-50 cursor-not-allowed">
-                <sys.icon size={13} className={`${sys.color} opacity-50 flex-shrink-0`} />
-                <span className="text-[11px] font-medium text-slate-400 truncate">
-                  <span className="sm:hidden">{sys.shortLabel}</span>
-                  <span className="hidden sm:inline">{sys.label}</span>
-                </span>
-                <Lock size={9} className="text-slate-300 flex-shrink-0" />
-              </button>
-            ))}
-          </div>
+          {/* Guardar borrador (modal global) */}
+          <Btn variant="secondary" size="full" onClick={onSaveDraft}>
+            <Save size={14} /> Guardar borrador
+          </Btn>
 
           {/* Fila navegación */}
           <div className="flex items-center gap-2">
@@ -246,37 +242,6 @@ export default function StepExport({ images, effectiveType, outputSize, onEdit, 
           </div>
         </div>
       </div>
-
-      {/* ── Modal guardar lote ── */}
-      {showSaveModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
-          onClick={() => { if (!saving) setShowSaveModal(false) }}>
-          <div className="bg-white rounded-xl p-5 w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
-            <h3 className="text-base font-semibold text-slate-800 mb-3">Guardar lote</h3>
-            <input
-              type="text"
-              placeholder={`Lote ${new Date().toLocaleDateString('es-AR')}`}
-              value={sessionName}
-              onChange={e => { setSessionName(e.target.value); setSaveError(null) }}
-              onKeyDown={e => e.key === 'Enter' && !saving && handleSaveSession()}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
-              autoFocus
-              disabled={saving}
-            />
-            {saveError && (
-              <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
-                ⚠️ {saveError}
-              </div>
-            )}
-            <div className="flex gap-2">
-              <Btn variant="secondary" onClick={() => setShowSaveModal(false)} disabled={saving}>Cancelar</Btn>
-              <Btn variant="primary" size="full" onClick={handleSaveSession} disabled={saving}>
-                {saving ? <><Spinner size="sm" /> Guardando…</> : 'Guardar'}
-              </Btn>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

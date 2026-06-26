@@ -5,6 +5,13 @@ const imageSchema = new mongoose.Schema({
   composedB64: { type: String, default: null },  // base64 JPEG con fondo
   cutoutB64:   { type: String, default: null },  // base64 PNG sin fondo
   isComposed:  { type: Boolean, default: false },
+  // ── Estado de trabajo (para retomar un borrador) ──
+  detectedType: { type: String, default: 'exterior' },   // exterior | interior
+  typeOverride: { type: String, default: null },
+  level:        { type: Boolean, default: true },
+  offset:       { type: mongoose.Schema.Types.Mixed, default: null },  // {dx,dy}
+  adjustments:  { type: mongoose.Schema.Types.Mixed, default: null },  // {brightness,contrast,rotation}
+  bgSettings:   { type: mongoose.Schema.Types.Mixed, default: null },  // preset/scale/pos/sombra… (sin bgFile)
 }, { _id: false })
 
 const sessionSchema = new mongoose.Schema({

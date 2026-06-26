@@ -17,8 +17,24 @@ const POSITIONS = [
  * cuando algo cambia.
  */
 export default function WatermarkPanel({ config, onChange }) {
-  const { logoFile, logoUrl, logoImg, position, sizePercent, opacity, enabled } = config
+  const { logoFile, logoUrl, logoImg, logoUrlLight, autoContrast, position, sizePercent, opacity, enabled } = config
   const { recent: recentWms, addWm, deleteWm } = useWmHistory()
+
+  // Logo "claro" (para fondos oscuros) — opcional, habilita el cambio automático
+  const handleLightLogoUpload = (e) => {
+    const f = e.target.files[0]
+    if (!f) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result
+      const img = new Image()
+      img.onload = () => onChange({ ...config, logoFileLight: f, logoUrlLight: dataUrl, logoImgLight: img })
+      img.src = dataUrl
+    }
+    reader.readAsDataURL(f)
+  }
+  const removeLightLogo = () =>
+    onChange({ ...config, logoFileLight: null, logoUrlLight: null, logoImgLight: null, autoContrast: false })
   // Colapsar la config cuando ya hay logo cargado (para no tapar el contenido)
   const [configOpen, setConfigOpen] = useState(false)
 
@@ -141,6 +157,34 @@ export default function WatermarkPanel({ config, onChange }) {
         {logoUrl && configOpen && (
           <div className="space-y-3 pt-1 border-t border-slate-100">
 
+            {/* Versión clara (para fondos oscuros) + cambio automático */}
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Versión clara (fondos oscuros)</p>
+              {logoUrlLight ? (
+                <div className="flex items-center gap-2 rounded-lg px-3 py-2 bg-slate-800">
+                  <img src={logoUrlLight} className="h-7 max-w-[5rem] object-contain flex-shrink-0" alt="Logo claro" />
+                  <span className="text-[11px] text-slate-300 flex-1">Logo claro cargado</span>
+                  <button onClick={removeLightLogo} className="text-slate-400 hover:text-red-400 flex-shrink-0">
+                    <X size={12} />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-slate-300 hover:border-blue-400 bg-slate-50 cursor-pointer">
+                  <input type="file" accept="image/*" className="hidden" onChange={handleLightLogoUpload} />
+                  <ImagePlus size={14} className="text-slate-400" strokeWidth={1.5} />
+                  <span className="text-xs text-slate-500">Subir logo claro (blanco) para fondos oscuros</span>
+                </label>
+              )}
+              {logoUrl && logoUrlLight && (
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-xs text-slate-600">Cambiar logo automáticamente según el fondo</span>
+                  <input type="checkbox" className="w-4 h-4 accent-blue-700"
+                    checked={!!autoContrast}
+                    onChange={e => onChange({ ...config, autoContrast: e.target.checked })} />
+                </label>
+              )}
+            </div>
+
             {/* Posición */}
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400 mb-2">Posición</p>
@@ -159,6 +203,13 @@ export default function WatermarkPanel({ config, onChange }) {
                     : <div key={i} className="w-10 h-10 rounded-lg border border-dashed border-slate-100 bg-slate-50" />
                 ))}
               </div>
+
+              {/* Modo mosaico: cubre toda la foto (anti-robo, ideal demos) */}
+              <button onClick={() => onChange({ ...config, position: 'tile' })}
+                className={`mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-semibold transition-all border
+                  ${position === 'tile' ? 'bg-blue-700 text-white border-blue-700' : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'}`}>
+                <span className="text-sm">▦</span> Mosaico — cubre toda la foto (anti-robo)
+              </button>
             </div>
 
             <Slider label="Tamaño del logo" value={sizePercent} min={5} max={40} unit="%"
@@ -172,16 +223,26 @@ export default function WatermarkPanel({ config, onChange }) {
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="text-slate-400 text-xs">Vista previa</span>
               </div>
-              <img src={logoUrl} alt="Logo preview"
-                style={{
-                  position: 'absolute', opacity, width: `${sizePercent}%`, height: 'auto',
-                  ...(position === 'top-left'     && { top: '4%',    left:  '3%'  }),
-                  ...(position === 'top-right'    && { top: '4%',    right: '3%'  }),
-                  ...(position === 'bottom-left'  && { bottom: '4%', left:  '3%'  }),
-                  ...(position === 'bottom-right' && { bottom: '4%', right: '3%'  }),
-                  ...(position === 'center'       && { top: '50%',   left:  '50%', transform: 'translate(-50%,-50%)' }),
-                }}
-              />
+              {position === 'tile' ? (
+                <div className="absolute pointer-events-none"
+                  style={{
+                    inset: '-30%', opacity, transform: 'rotate(-30deg)',
+                    backgroundImage: `url(${logoUrl})`, backgroundRepeat: 'repeat',
+                    backgroundSize: `${Math.max(8, sizePercent * 1.6)}%`,
+                  }}
+                />
+              ) : (
+                <img src={logoUrl} alt="Logo preview"
+                  style={{
+                    position: 'absolute', opacity, width: `${sizePercent}%`, height: 'auto',
+                    ...(position === 'top-left'     && { top: '4%',    left:  '3%'  }),
+                    ...(position === 'top-right'    && { top: '4%',    right: '3%'  }),
+                    ...(position === 'bottom-left'  && { bottom: '4%', left:  '3%'  }),
+                    ...(position === 'bottom-right' && { bottom: '4%', right: '3%'  }),
+                    ...(position === 'center'       && { top: '50%',   left:  '50%', transform: 'translate(-50%,-50%)' }),
+                  }}
+                />
+              )}
             </div>
 
             {/* Botón "Listo" para colapsar */}

@@ -15,10 +15,13 @@ backend/.env
 frontend/.env
 
 # ── Modelos de IA ─────────────────────────────────────────────────────────────
-# El modelo ONNX viene bundleado en node_modules (ya cubierto arriba).
+# El modelo ONNX de @imgly viene bundleado en node_modules (ya cubierto arriba).
 # Por las dudas, excluir directorios de caché legacy de versiones anteriores de @imgly.
 backend/.imgly/
 **/.imgly-cache/
+# Modelos BiRefNet (.onnx) — pesan 214MB/972MB, superan el límite de GitHub.
+# Se descargan en el servidor durante el deploy (ver scripts/download-models.sh).
+backend/ml/*.onnx
 
 # ── Uploads temporales ────────────────────────────────────────────────────────
 backend/uploads/

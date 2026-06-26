@@ -7,9 +7,8 @@ function Nav() {
       style={{ background: 'rgba(8,11,20,0.85)', backdropFilter: 'blur(12px)' }}>
       <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
         {/* Logo */}
-        <a href="#" className="flex items-center gap-2.5">
-          <img src="/iso-autofondo.svg" alt="AutoFondo" className="w-7 h-7" />
-          <span className="font-heading font-bold text-af-text text-sm tracking-tight">AutoFondo</span>
+        <a href="#" className="flex items-center">
+          <img src="/brands/logo-autofondo.svg" alt="AutoFondo" className="h-7 w-auto" />
         </a>
 
         {/* Links */}
@@ -333,9 +332,10 @@ function Hero() {
             <div className="order-3 lg:order-2">
               <p className="text-base md:text-lg mb-10 max-w-xl leading-relaxed"
                 style={{ color: '#94A3B8' }}>
-                En segundos tenés todo el set de fotos listo para publicar.
-                La IA elimina fondos, aplica el tuyo y pone tu logo — en toda la flota, de una sola vez.
-                Sin Photoshop, sin diseñadores, sin esperas.
+                En segundos tenés todo el set listo para publicar. La IA recorta, genera
+                fondos profesionales (showroom, estudio, exteriores) y los mantiene
+                consistentes en todas las fotos del mismo auto. Tu fondo, tu logo, toda la
+                flota — sin Photoshop, sin diseñadores, sin esperas.
               </p>
 
               <div className="flex items-center gap-4 flex-wrap">
@@ -387,13 +387,20 @@ function Hero() {
   )
 }
 
-// ── Tres Estados del Proceso ───────────────────────────────────────────────────
+// ── Cómo funciona — en 3 pasos ─────────────────────────────────────────────────
 function TresEstados() {
+  const pasos = [
+    { n: '1', accion: 'Cargás las fotos',       img: '/Auto_Con_Fondo.png', fit: 'cover',
+      desc: 'Subís el lote del auto de una sola vez. No importa dónde estén tomadas.' },
+    { n: '2', accion: 'Elegís el fondo',         img: '/Auto_Sin_Fondo.png', fit: 'contain',
+      desc: 'Gris, el tuyo, o una escena por IA (showroom, estudio…). La IA recorta y arma todo.' },
+    { n: '3', accion: 'Descargás o publicás',    img: '/auto_Final.png',     fit: 'cover',
+      desc: 'Con tu logo, todo el lote listo para publicar donde lo necesites.' },
+  ]
   return (
     <section id="como-funciona" style={{ background: '#080B14' }}>
       <div className="max-w-7xl mx-auto px-6 py-28">
 
-        {/* Header editorial — mismo estilo que Artificialmente */}
         <div className="mb-16 pb-8" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div className="text-[10px] font-semibold uppercase tracking-[0.3em] mb-5"
             style={{ color: 'rgba(255,255,255,0.28)' }}>
@@ -402,58 +409,38 @@ function TresEstados() {
           <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6">
             <h2 className="font-heading text-4xl md:text-5xl font-bold leading-[1.06] max-w-xl"
               style={{ color: '#F1F5F9' }}>
-              De la foto cruda<br />a imagen publicable.
+              Así de simple.<br />En 3 pasos.
             </h2>
             <p className="text-sm leading-relaxed max-w-xs"
               style={{ color: 'rgba(255,255,255,0.32)' }}>
-              Menos de 5 segundos por imagen.<br />Toda la flota a la vez.
+              Cargás el lote y la herramienta hace el resto.<br />Sin Photoshop, sin diseñadores.
             </p>
           </div>
         </div>
 
-        {/* Las 3 imágenes reales — grid limpio, sin cards */}
+        {/* 3 pasos con número, imagen real y flecha entre ellos */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-10 md:gap-8">
-
-          <div>
-            <p className="font-mono text-[11px] mb-5" style={{ color: 'rgba(0,144,255,0.6)' }}>
-              01 — Original
-            </p>
-            <img src="/Auto_Con_Fondo.png" alt="Foto original con fondo"
-              className="w-full"
-              style={{ aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} />
-            <p className="text-[13px] mt-4 leading-relaxed"
-              style={{ color: 'rgba(255,255,255,0.35)' }}>
-              Foto tomada en cualquier lugar. El fondo no importa.
-            </p>
-          </div>
-
-          <div>
-            <p className="font-mono text-[11px] mb-5" style={{ color: 'rgba(0,144,255,0.6)' }}>
-              02 — Fondo eliminado
-            </p>
-            <img src="/Auto_Sin_Fondo.png" alt="Auto sin fondo"
-              className="w-full"
-              style={{ aspectRatio: '4/3', objectFit: 'contain', display: 'block',
-                background: 'rgba(255,255,255,0.03)' }} />
-            <p className="text-[13px] mt-4 leading-relaxed"
-              style={{ color: 'rgba(255,255,255,0.35)' }}>
-              IA elimina el fondo con precisión. PNG transparente en segundos.
-            </p>
-          </div>
-
-          <div>
-            <p className="font-mono text-[11px] mb-5" style={{ color: 'rgba(0,144,255,0.6)' }}>
-              03 — Publicable
-            </p>
-            <img src="/auto_Final.png" alt="Auto con fondo profesional"
-              className="w-full"
-              style={{ aspectRatio: '4/3', objectFit: 'cover', display: 'block' }} />
-            <p className="text-[13px] mt-4 leading-relaxed"
-              style={{ color: 'rgba(255,255,255,0.35)' }}>
-              Con tu fondo y tu logo. Listo para publicar donde lo necesitás.
-            </p>
-          </div>
-
+          {pasos.map((p, i) => (
+            <div key={p.n} className="relative">
+              <div className="flex items-center gap-3 mb-5">
+                <span className="flex items-center justify-center w-9 h-9 rounded-full font-heading font-bold text-base flex-shrink-0"
+                  style={{ background: 'rgba(0,144,255,0.12)', color: '#0090FF', border: '1px solid rgba(0,144,255,0.3)' }}>
+                  {p.n}
+                </span>
+                <span className="font-heading font-bold text-lg" style={{ color: '#F1F5F9' }}>{p.accion}</span>
+              </div>
+              <img src={p.img} alt={p.accion} className="w-full rounded-lg"
+                style={{ aspectRatio: '4/3', objectFit: p.fit, display: 'block',
+                  background: p.fit === 'contain' ? 'rgba(255,255,255,0.03)' : undefined }} />
+              <p className="text-[13px] mt-4 leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                {p.desc}
+              </p>
+              {i < 2 && (
+                <div className="hidden md:flex absolute -right-5 items-center justify-center font-heading text-2xl"
+                  style={{ top: '8px', color: 'rgba(0,144,255,0.4)' }}>→</div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
     </section>
@@ -463,13 +450,13 @@ function TresEstados() {
 // ── Funcionalidades ────────────────────────────────────────────────────────────
 function Funciones() {
   const features = [
-    { n: '01', title: 'Procesamiento por lote',           desc: 'Subí 1 foto o 200 — la IA procesa todo en paralelo. Sin esperas adicionales según la cantidad.' },
-    { n: '02', title: 'Menos de 5 segundos por foto',     desc: 'Velocidad real. Cada imagen recortada con precisión antes de que puedas pestañear.' },
-    { n: '03', title: 'Sombra automática bajo el auto',   desc: 'La IA genera una sombra natural en la base del vehículo para que el resultado se vea realista sobre cualquier fondo.' },
-    { n: '04', title: 'Tapado automático de matrícula',   desc: 'Detecta y tapa la chapa del vehículo antes de publicar. Con negro o con tu logo, sin edición manual.' },
-    { n: '05', title: 'Marca de agua al lote entero',     desc: 'Aplicá el logo de tu automotora a todas las fotos con un clic. Consistente en toda la flota.' },
-    { n: '06', title: 'Edición por lote',                 desc: 'Ajustá brillo, contraste y recorte para todas las fotos a la vez. Un cambio, toda la flota actualizada.' },
-    { n: '07', title: 'Edición individual',               desc: 'Cuando una foto lo necesita, ajustá cada detalle en el modo individual con control total.' },
+    { n: '01', title: 'Recorte con IA por lote',          desc: 'Cargás el lote completo y se procesa solo, una foto tras otra, con recorte de alta calidad y bordes limpios.' },
+    { n: '02', title: 'Fondos generados por IA',          desc: 'Showroom, estudio, exteriores… la IA crea fondos profesionales realistas con un clic. Tu fondo, gris o el que elijas.' },
+    { n: '03', title: 'Consistencia entre las fotos',     desc: 'Las fotos del mismo auto comparten el mismo escenario en todos los ángulos. Catálogo prolijo y parejo, no un collage.' },
+    { n: '04', title: 'Sombra 3D realista',               desc: 'La IA proyecta la sombra siguiendo el ángulo del vehículo, apoyada en el piso. Se ve real sobre cualquier fondo.' },
+    { n: '05', title: 'Mejorá fotos de baja calidad',     desc: 'Más resolución e iluminación pareja con IA. Fotos de celular que quedan a estándar de catálogo.' },
+    { n: '06', title: 'Tapado automático de matrícula',   desc: 'Detecta y tapa la chapa antes de publicar. Con negro o con tu logo, sin edición manual.' },
+    { n: '07', title: 'Marca de agua anti-robo',          desc: 'Tu logo en todo el lote con un clic — incluso en mosaico, para que nadie reuse tus fotos.' },
     { n: '08', title: 'Publicación directa',              desc: null, isPublish: true },
   ]
 
@@ -575,7 +562,7 @@ function ParaQuien() {
     {
       n: '04',
       title: 'Escala sin esfuerzo',
-      desc: 'Procesá 1 foto o 200 en el mismo tiempo. La IA trabaja igual de rápido para toda tu flota disponible.',
+      desc: 'Cargás el lote completo y la herramienta lo procesa sola, sin que edites foto por foto. Vos te dedicás a vender.',
     },
   ]
 
@@ -669,9 +656,8 @@ function Footer() {
     <footer style={{ background: '#050810', borderTop: '1px solid #1E293B' }}>
       <div className="max-w-6xl mx-auto px-6 py-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
         <div>
-          <div className="flex items-center gap-2 mb-2">
-            <img src="/iso-autofondo.svg" alt="AutoFondo" className="w-5 h-5" />
-            <span className="font-heading font-bold text-sm" style={{ color: '#F1F5F9' }}>AutoFondo</span>
+          <div className="flex items-center mb-2">
+            <img src="/brands/logo-autofondo.svg" alt="AutoFondo" className="h-6 w-auto" />
           </div>
           <p className="text-xs" style={{ color: '#475569' }}>
             Una herramienta de{' '}
@@ -696,6 +682,7 @@ export default function Landing() {
     <div>
       <Nav />
       <Hero />
+      <TresEstados />
       <Funciones />
       <ParaQuien />
       <Precios />
