@@ -469,15 +469,18 @@ router.post('/leads', jsonSmall, async (req, res) => {
 
 // ── Códigos de acceso directo ─────────────────────────────────────────────────
 router.get('/access/:code', async (req, res) => {
-  if (!requireMongo(res)) return
+  const code = req.params.code.toUpperCase()
+  // Código fijo — cambiarlo acá o en .env con ACCESS_CODE=XXXX
+  const codigoFijo = (process.env.ACCESS_CODE || 'AUTO24').toUpperCase()
+  if (code === codigoFijo) return res.json({ ok: true, label: 'acceso' })
+  // Si hay MongoDB, también buscar en la base de datos
   try {
-    const code = req.params.code.toUpperCase()
-    const ac   = await AccessCode.findOne({ code, active: true })
+    const ac = await AccessCode.findOne({ code, active: true })
     if (!ac) return res.status(404).json({ ok: false, error: 'Código inválido o inactivo' })
     await AccessCode.updateOne({ _id: ac._id }, { $inc: { uses: 1 } })
     res.json({ ok: true, label: ac.label })
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message })
+  } catch {
+    res.status(404).json({ ok: false, error: 'Código inválido' })
   }
 })
 

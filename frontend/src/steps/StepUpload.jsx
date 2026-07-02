@@ -1,15 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
-import { Camera, Images, Plus, Scissors, EyeOff, Info, AlertTriangle, ShieldCheck, ChevronDown, ChevronUp, ImagePlus, X, Sparkles } from 'lucide-react'
+import { Camera, Images, Plus, Scissors, EyeOff, Info, AlertTriangle, ShieldCheck, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import ImageCard from '../components/ImageCard'
 import { Btn } from '../components/ui'
 
 export default function StepUpload({ images, rejected, addFiles, toggleType, effectiveType, removeImage, onZoom, onNext, stats, plateOptions, onPlateOptions }) {
-  const [dragging,         setDragging]         = useState(false)
-  const [plateOpen,        setPlateOpen]        = useState(false)
-  const [plateLogoPreview, setPlateLogoPreview] = useState(null)
-  const inputRef      = useRef()
-  const cameraRef     = useRef()
-  const plateLogoRef  = useRef()
+  const [dragging,  setDragging]  = useState(false)
+  const [plateOpen, setPlateOpen] = useState(false)
+  const inputRef  = useRef()
+  const cameraRef = useRef()
 
   const canContinue = images.length > 0
 
@@ -214,56 +212,14 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
               </div>
               <div>
                 <p className="text-sm font-semibold text-slate-700">Tapar matrícula automáticamente</p>
-                <p className="text-xs text-slate-400 mt-0.5">Se cubre con negro o con tu logo</p>
+                <p className="text-xs text-slate-400 mt-0.5">Se cubre con un rectángulo negro</p>
               </div>
             </label>
 
             {plateOptions.hidePlate && (
-              <div className="space-y-3 pl-4 border-l-2 border-blue-100">
-                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400">Reemplazar con</p>
-
-                <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
-                  <input type="radio" name="plateMode"
-                    checked={!plateOptions.plateLogoFile}
-                    onChange={() => { onPlateOptions({ ...plateOptions, plateLogoFile: null }); setPlateLogoPreview(null) }}
-                    className="accent-blue-700 w-4 h-4" />
-                  <span className="text-sm text-slate-700">Chapa negra</span>
-                  <span className="inline-block w-12 h-4 rounded bg-black opacity-80" />
-                </label>
-
-                <label className="flex items-center gap-3 cursor-pointer min-h-[44px]">
-                  <input type="radio" name="plateMode"
-                    checked={!!plateOptions.plateLogoFile}
-                    onChange={() => plateLogoRef.current?.click()}
-                    className="accent-blue-700 w-4 h-4" />
-                  <span className="text-sm text-slate-700">Logo de mi automotora</span>
-                </label>
-
-                <input ref={plateLogoRef} type="file" accept="image/*" className="hidden"
-                  onChange={e => {
-                    const f = e.target.files[0]
-                    if (!f) return
-                    onPlateOptions({ ...plateOptions, plateLogoFile: f })
-                    setPlateLogoPreview(URL.createObjectURL(f))
-                  }} />
-
-                {plateLogoPreview && (
-                  <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-200 w-fit">
-                    <img src={plateLogoPreview} className="h-8 max-w-[80px] object-contain" alt="Logo" />
-                    <button
-                      onClick={() => { onPlateOptions({ ...plateOptions, plateLogoFile: null }); setPlateLogoPreview(null) }}
-                      className="w-7 h-7 flex items-center justify-center rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                      <X size={14} />
-                    </button>
-                  </div>
-                )}
-
-                {!plateOptions.plateLogoFile && plateOptions.hidePlate && (
-                  <button onClick={() => plateLogoRef.current?.click()}
-                    className="flex items-center gap-2 text-sm text-slate-500 hover:text-blue-700 transition-colors min-h-[44px]">
-                    <ImagePlus size={16} /> Cargar logo para las chapas
-                  </button>
-                )}
+              <div className="flex items-center gap-3 bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-200">
+                <span className="inline-block w-10 h-3.5 rounded bg-black opacity-80 flex-shrink-0" />
+                <p className="text-xs text-slate-500">Se tapa con un rectángulo negro</p>
               </div>
             )}
           </div>

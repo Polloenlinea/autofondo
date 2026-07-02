@@ -1,12 +1,21 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import Landing      from './pages/Landing'
+import LoginPage    from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import App          from './App'
 
 const API = import.meta.env.VITE_API_URL || '/api/v1'
 
-// Ruta /p/:code — acceso directo sin registro
+// Guard: si no hay código en sesión, manda al login
+function ProtectedApp() {
+  const code = sessionStorage.getItem('af_code')
+  const lead = sessionStorage.getItem('af_lead')
+  if (!code && !lead) return <Navigate to="/login" replace />
+  return <App />
+}
+
+// Ruta /p/:code — acceso directo via link con código
 function DirectAccess() {
   const { code } = useParams()
 
@@ -16,13 +25,13 @@ function DirectAccess() {
         const res  = await fetch(`${API}/access/${code}`)
         const data = await res.json()
         if (data.ok) {
-          sessionStorage.setItem('af_code', code)
+          sessionStorage.setItem('af_code', code.toUpperCase())
           window.location.replace('/app')
         } else {
-          window.location.replace('/?invalid_code=1')
+          window.location.replace('/login?invalid=1')
         }
       } catch {
-        window.location.replace('/?invalid_code=1')
+        window.location.replace('/login?invalid=1')
       }
     }
     validate()
@@ -40,9 +49,10 @@ export default function Router() {
     <BrowserRouter>
       <Routes>
         <Route path="/"         element={<Landing />} />
+        <Route path="/login"    element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/p/:code"  element={<DirectAccess />} />
-        <Route path="/app"      element={<App />} />
+        <Route path="/app"      element={<ProtectedApp />} />
         <Route path="*"         element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

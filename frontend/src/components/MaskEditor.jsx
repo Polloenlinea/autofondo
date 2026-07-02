@@ -18,8 +18,10 @@ export default function MaskEditor({ cutoutB64, originalUrl, restoreOffset, onSa
   const lastPos       = useRef(null)
   const activePtId    = useRef(null)
 
-  const isPanning   = useRef(false)
-  const panOrigin   = useRef(null)
+  const isPanning      = useRef(false)
+  const panOrigin      = useRef(null)
+  const spaceActive    = useRef(false)   // spacebar pan temporal
+  const toolBeforeSpace = useRef(null)
 
   // Multitouch: 2 dedos = zoom/pan (pinch), 1 dedo = dibujar
   const activeTouches = useRef(new Map())
@@ -112,15 +114,36 @@ export default function MaskEditor({ cutoutB64, originalUrl, restoreOffset, onSa
   }, [])
 
   useEffect(() => {
-    const handler = (e) => {
+    const onKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault()
         undo()
+        return
+      }
+      // Spacebar → pan temporal (como Photoshop)
+      if (e.code === 'Space' && !spaceActive.current && !e.repeat) {
+        e.preventDefault()
+        spaceActive.current = true
+        toolBeforeSpace.current = penTool
+        setPenTool('pan')
       }
     }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [undo])
+    const onKeyUp = (e) => {
+      if (e.code === 'Space' && spaceActive.current) {
+        e.preventDefault()
+        spaceActive.current = false
+        setPenTool(toolBeforeSpace.current || 'brush')
+        isPanning.current = false
+        panOrigin.current = null
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup',   onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup',   onKeyUp)
+    }
+  }, [undo, penTool])
 
   // ── Cursor personalizado ───────────────────────────────────────────────────
   const updateCursor = useCallback((clientX, clientY) => {
@@ -335,7 +358,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, restoreOffset, onSa
       const dist     = Math.hypot(b.x - a.x, b.y - a.y)
       const centroid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
       const scale    = dist / pinchState.current.dist
-      const newZoom  = Math.max(0.3, Math.min(8, pinchState.current.zoom * scale))
+      const newZoom  = Math.max(0.05, Math.min(8, pinchState.current.zoom * scale))
       const cont = containerRef.current
       if (cont) {
         const rect = cont.getBoundingClientRect()
@@ -388,7 +411,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, restoreOffset, onSa
   const onWheel = useCallback((e) => {
     e.preventDefault()
     const delta   = e.deltaY > 0 ? -0.15 : 0.15
-    const newZoom = Math.max(0.3, Math.min(8, zoom + delta))
+    const newZoom = Math.max(0.05, Math.min(8, zoom + delta))
     const cont    = containerRef.current
     if (!cont) return
     const rect  = cont.getBoundingClientRect()
@@ -564,7 +587,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, restoreOffset, onSa
               disabled:opacity-30 disabled:cursor-not-allowed text-slate-500 hover:bg-slate-100 hover:text-slate-700">
             <Undo2 size={13} />
           </button>
-          <button onClick={() => setZoom(z => Math.max(0.3, +(z - 0.25).toFixed(2)))}
+          <button onClick={() => setZoom(z => Math.max(0.05, +(z - 0.25).toFixed(2)))}
             className="w-7 h-7 flex items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 border border-slate-200">
             <ZoomOut size={13} />
           </button>
@@ -612,7 +635,7 @@ export default function MaskEditor({ cutoutB64, originalUrl, restoreOffset, onSa
       <div className={`px-3 py-1.5 border-b flex-shrink-0 ${eyeDropping ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'}`}>
         <p className={`text-[11px] leading-snug ${eyeDropping ? 'text-emerald-700' : 'text-amber-700'}`}>
           {eyeDropping && <><strong>Gotero activo</strong> — hacé clic sobre cualquier parte del auto para tomar ese color. Se cancela solo después de seleccionar.</>}
-          {!eyeDropping && tool === 'erase'   && <>Pintá con el pincel para <strong>eliminar</strong> partes del fondo que quedaron · con 2 dedos hacés zoom/mover · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
+          {!eyeDropping && tool === 'erase'   && <>Pintá con el pincel para <strong>eliminar</strong> partes del fondo · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Espacio</kbd> para mover · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
           {!eyeDropping && tool === 'restore' && <>Pintá para <strong>recuperar</strong> partes del auto que la IA borró de más — toma los píxeles de la foto original · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
           {!eyeDropping && tool === 'paint'   && <>Pintá con color sólido para <strong>tapar</strong> logos, detalles o imperfecciones · <kbd className="bg-amber-100 px-1 rounded text-[10px]">Ctrl+Z</kbd> deshace</>}
           {tool === 'pan'     && 'Arrastrá para mover · Scroll para zoom'}

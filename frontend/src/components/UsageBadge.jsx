@@ -29,7 +29,7 @@ export default function UsageBadge() {
 
   return (
     <div
-      title={`Generaciones IA de Photoroom (estiman tu gasto):\n• Sombra IA: ${u.shadow}\n• Fondo IA: ${u.scene}\n• Total: ${u.total}\n\nFondos comunes y quitar-fondo NO gastan.\nDesde: ${new Date(u.since).toLocaleString('es-AR')}`}
+      title={`Generaciones IA:\n• Sombra IA: ${u.shadow}\n• Fondo IA: ${u.scene}\n• Total: ${u.total}\n\nFondos comunes y quitar-fondo no generan IA.\nDesde: ${new Date(u.since).toLocaleString('es-AR')}`}
       className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-violet-50 text-violet-700 select-none cursor-default"
     >
       <Sparkles size={14} className="flex-shrink-0" />

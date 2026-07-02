@@ -37,14 +37,15 @@ export function Slider({ label, value, min, max, unit = '', onChange }) {
   )
 }
 
-export function Toggle({ label, value, onChange }) {
+export function Toggle({ label, value, onChange, disabled = false }) {
   return (
-    <label className="flex items-center gap-3 cursor-pointer select-none">
+    <label className={`flex items-center gap-3 select-none ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}`}>
       <button
         type="button"
         role="switch"
         aria-checked={value}
-        onClick={() => onChange(!value)}
+        disabled={disabled}
+        onClick={() => !disabled && onChange(!value)}
         className={`relative w-12 h-7 rounded-full transition-colors flex-shrink-0
           ${value ? 'bg-blue-700' : 'bg-slate-300'}`}
       >

@@ -23,15 +23,15 @@ function Nav() {
 
         {/* CTAs */}
         <div className="flex items-center gap-3">
-          <a href="/app"
+          <a href="/login"
             className="hidden md:block text-sm font-medium transition-colors"
             style={{ color: '#94A3B8' }}
             onMouseEnter={e => e.currentTarget.style.color = '#F1F5F9'}
             onMouseLeave={e => e.currentTarget.style.color = '#94A3B8'}
           >
-            Acceder a la herramienta →
+            Tengo un código →
           </a>
-          <a href="/app"
+          <a href="/login"
             className="px-4 py-2 rounded-full text-sm font-semibold text-white transition-colors"
             style={{ background: '#0090FF' }}
             onMouseEnter={e => e.currentTarget.style.background = '#007AE6'}
@@ -45,233 +45,168 @@ function Nav() {
   )
 }
 
-// ── Mockup animado 3 estados ───────────────────────────────────────────────────
-const FONDOS_EJEMPLOS = [
-  '/auto_Final.png',
-  '/auto_Final1.png',
-  '/auto_Final2.png',
+// ── Before / After reveal ─────────────────────────────────────────────────────
+const AFTER_IMAGES = [
+  '/con_Autohub.png',
+  '/con_Autohub2.png',
+  '/con_Autohub3.png',
 ]
 
-const PROCESO_STEPS = [
-  {
-    n: '01', label: 'Original',
-    desc: 'Foto tomada en cualquier lugar',
-    src: ['/Auto_Con_Fondo.png'], fit: 'cover', badge: false,
-  },
-  {
-    n: '02', label: 'Sin fondo',
-    desc: 'IA · menos de 5 segundos',
-    src: ['/Auto_Sin_Fondo.png'], fit: 'contain', badge: true,
-  },
-  {
-    n: '03', label: 'Fondo personalizado',
-    desc: 'Tu fondo, tu logo, tu marca',
-    src: FONDOS_EJEMPLOS, fit: 'cover', badge: false,
-  },
-]
+function BeforeAfterReveal() {
+  const [pos, setPos]           = useState(78)
+  const [dragging, setDragging] = useState(false)
+  const [userDragged, setUserDragged] = useState(false)
+  // Cross-fade: slotA siempre visible, slotB entra encima y luego se convierte en A
+  const slotARef  = useRef(0)
+  const [slotA, setSlotA] = useState(0)
+  const [slotB, setSlotB] = useState(null)
+  const [bVisible, setBVisible] = useState(false)
+  const containerRef = useRef(null)
+  const posRef       = useRef(78)
+  const dirRef       = useRef(-1)
 
-function ProcesoMockup() {
-  const [active,   setActive]   = useState(0)
-  const [tick,     setTick]     = useState(0)
-  const [fondoIdx, setFondoIdx] = useState(0)
-  const [started,  setStarted]  = useState(false)
-  const rootRef = useRef(null)
-
-  // Arranca el timer solo cuando el componente es visible en pantalla
+  // Animación automática de la línea
   useEffect(() => {
-    const el = rootRef.current
-    if (!el) return
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          // Pequeña demora para que el usuario vea el paso 1 antes de avanzar
-          const t = setTimeout(() => setStarted(true), 1000)
-          observer.disconnect()
-          return () => clearTimeout(t)
-        }
-      },
-      { threshold: 0.5 }   // al menos 50% visible
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
+    if (userDragged) return
+    let raf
+    const step = () => {
+      posRef.current += dirRef.current * 0.22
+      if (posRef.current <= 12) { posRef.current = 12; dirRef.current = 1 }
+      if (posRef.current >= 88) { posRef.current = 88; dirRef.current = -1 }
+      setPos(+posRef.current.toFixed(1))
+      raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [userDragged])
+
+  // Ciclar imágenes del "después" con cross-fade real (A siempre visible, B entra encima)
+  useEffect(() => {
+    const t = setInterval(() => {
+      const next = (slotARef.current + 1) % AFTER_IMAGES.length
+      setSlotB(next)
+      // dos frames para que React pinte el elemento antes de arrancar la transición
+      requestAnimationFrame(() => requestAnimationFrame(() => setBVisible(true)))
+      setTimeout(() => {
+        slotARef.current = next
+        setSlotA(next)
+        setSlotB(null)
+        setBVisible(false)
+      }, 650)
+    }, 3500)
+    return () => clearInterval(t)
   }, [])
 
-  // Lógica de avance: pasos 0 y 1 avanzan solos; paso 2 cicla todos los fondos y vuelve al 0
-  useEffect(() => {
-    if (!started) return
-
-    if (active === 0 || active === 1) {
-      const t = setTimeout(() => {
-        setActive(a => a + 1)
-        setTick(k => k + 1)
-        setFondoIdx(0)
-      }, 3200)
-      return () => clearTimeout(t)
-    }
-
-    // Paso 3: mostrar cada fondo 2.2s, el último (placa) 4.5s, luego volver al paso 1
-    if (active === 2) {
-      const isLast = fondoIdx === FONDOS_EJEMPLOS.length - 1
-      if (!isLast) {
-        const t = setTimeout(() => {
-          setFondoIdx(i => i + 1)
-        }, 2200)
-        return () => clearTimeout(t)
-      } else {
-        const t = setTimeout(() => {
-          setActive(0)
-          setFondoIdx(0)
-          setTick(k => k + 1)
-        }, 4500)
-        return () => clearTimeout(t)
-      }
-    }
-  }, [started, active, fondoIdx])
-
-  const handleClick = (i) => {
-    setActive(i)
-    setTick(k => k + 1)
-    setFondoIdx(0)
-    setStarted(true)
+  const getPosFromEvent = (e) => {
+    const rect = containerRef.current?.getBoundingClientRect()
+    if (!rect) return pos
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX
+    return Math.min(96, Math.max(4, (clientX - rect.left) / rect.width * 100))
   }
 
-  // Barra de progreso del paso activo:
-  // pasos 0 y 1 duran 3.2s; paso 2 dura 2.2s × cant fondos
-  const progressDuration = active === 2
-    ? `${2.2 * FONDOS_EJEMPLOS.length}s`
-    : '3.2s'
+  const onPointerDown = (e) => { e.preventDefault(); setDragging(true); setUserDragged(true); setPos(getPosFromEvent(e)) }
+  const onPointerMove = (e) => { if (!dragging) return; const p = getPosFromEvent(e); posRef.current = p; setPos(p) }
+  const onPointerUp   = () => setDragging(false)
 
   return (
-    <div ref={rootRef} className="w-full max-w-[380px] flex-shrink-0 mx-auto lg:mx-0">
+    <div className="w-full select-none" style={{ userSelect: 'none' }}>
 
-      {/* ── Título sobre la imagen ── */}
-      <div style={{
-        background: '#0D1117',
-        padding: '10px 16px',
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}>
-        <span style={{
-          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: '#0090FF',
-          fontFamily: 'monospace', fontSize: '12px', fontWeight: 800,
-          color: '#fff',
-        }}>
-          {active + 1}
-        </span>
-        <span style={{
-          fontSize: '15px', fontWeight: 800, letterSpacing: '0.06em',
-          color: '#F1F5F9', textTransform: 'uppercase',
-        }}>
-          {PROCESO_STEPS[active].label}
-        </span>
+      {/* Labels */}
+      <div className="flex justify-between mb-2 px-1">
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em',
+          color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>Antes</span>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.14em',
+          color: '#0090FF', textTransform: 'uppercase' }}>Después ✦</span>
       </div>
 
-      {/* ── Imagen con crossfade ── */}
-      <div className="relative overflow-hidden"
-        style={{ aspectRatio: '4/3', background: '#07090f' }}>
+      {/* Contenedor */}
+      <div
+        ref={containerRef}
+        className="relative overflow-hidden"
+        style={{
+          aspectRatio: '16/9',
+          borderRadius: 12,
+          cursor: dragging ? 'grabbing' : 'grab',
+          touchAction: 'none',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
+        }}
+        onMouseDown={onPointerDown}
+        onMouseMove={onPointerMove}
+        onMouseUp={onPointerUp}
+        onMouseLeave={onPointerUp}
+        onTouchStart={onPointerDown}
+        onTouchMove={onPointerMove}
+        onTouchEnd={onPointerUp}
+      >
+        {/* ANTES */}
+        <img src="/original.png" alt="Antes"
+          className="absolute inset-0 w-full h-full"
+          style={{ objectFit: 'cover', pointerEvents: 'none' }} />
 
-        {/* Pasos 0 y 1 */}
-        {PROCESO_STEPS.slice(0, 2).map((step, i) => (
-          <img key={i} src={step.src[0]} alt={step.label}
+        {/* DESPUÉS — cross-fade: A siempre visible, B entra encima */}
+        <div className="absolute inset-0" style={{ clipPath: `inset(0 0 0 ${pos}%)`, pointerEvents: 'none' }}>
+          {/* Slot A: siempre en pantalla, nunca desaparece */}
+          <img src={AFTER_IMAGES[slotA]} alt="Después"
             className="absolute inset-0 w-full h-full"
-            style={{
-              objectFit: step.fit,
-              opacity: active === i ? 1 : 0,
-              transition: 'opacity 0.65s ease-in-out',
-            }} />
-        ))}
-
-        {/* Paso 2 — galería ciclando */}
-        <div className="absolute inset-0"
-          style={{ opacity: active === 2 ? 1 : 0, transition: 'opacity 0.65s ease-in-out' }}>
-          {FONDOS_EJEMPLOS.map((src, i) => (
-            <img key={i} src={src} alt={`Ejemplo ${i + 1}`}
+            style={{ objectFit: 'cover' }} />
+          {/* Slot B: entra encima con fade, luego se convierte en A */}
+          {slotB !== null && (
+            <img src={AFTER_IMAGES[slotB]} alt="Después"
               className="absolute inset-0 w-full h-full"
               style={{
                 objectFit: 'cover',
-                opacity: fondoIdx === i ? 1 : 0,
+                opacity: bVisible ? 1 : 0,
                 transition: 'opacity 0.5s ease-in-out',
               }} />
-          ))}
-          {/* Miniaturas clicables — sin border-radius, sin card */}
-          <div style={{
-            position: 'absolute', bottom: 10, left: 10,
-            display: 'flex', gap: 4,
-          }}>
-            {FONDOS_EJEMPLOS.map((src, i) => (
-              <button key={i}
-                onClick={e => { e.stopPropagation(); setFondoIdx(i) }}
-                style={{
-                  width: 32, height: 24, overflow: 'hidden',
-                  outline: 'none', cursor: 'pointer', padding: 0,
-                  border: 'none',
-                  opacity: fondoIdx === i ? 1 : 0.45,
-                  transition: 'opacity 0.2s',
-                  boxShadow: fondoIdx === i ? '0 0 0 2px #0090FF' : 'none',
-                }}>
-                <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-              </button>
-            ))}
-          </div>
+          )}
         </div>
 
-        {/* Gradiente piso */}
-        <div className="absolute bottom-0 left-0 right-0 h-14 pointer-events-none"
-          style={{ background: 'linear-gradient(to top, rgba(7,9,15,0.7), transparent)' }} />
-      </div>
+        {/* Línea */}
+        <div className="absolute top-0 bottom-0 w-0.5 pointer-events-none"
+          style={{
+            left: `${pos}%`,
+            background: 'white',
+            boxShadow: '0 0 12px rgba(0,144,255,0.7), 0 0 3px rgba(255,255,255,1)',
+          }} />
 
-      {/* ── Indicadores de paso — sin borde, esquinas rectas ── */}
-      <div style={{ display: 'flex', marginTop: 2, gap: 1 }}>
-        {PROCESO_STEPS.map((step, i) => {
-          const isActive = active === i
-          const accent = i === 2 ? '#06D6A0' : '#0090FF'
-          return (
-            <button key={i} onClick={() => handleClick(i)}
-              style={{
-                flex: 1, textAlign: 'left', cursor: 'pointer', outline: 'none',
-                background: isActive ? 'rgba(255,255,255,0.05)' : 'transparent',
-                border: 'none', borderRadius: 0,
-                padding: '10px 10px 12px',
-                borderTop: `2px solid ${isActive ? accent : 'rgba(255,255,255,0.08)'}`,
-                transition: 'background 0.3s, border-color 0.3s',
-              }}>
-              {/* Número del paso */}
-              <p style={{
-                fontSize: '20px', fontWeight: 900, lineHeight: 1, marginBottom: 6,
-                color: isActive ? accent : 'rgba(255,255,255,0.15)',
-                transition: 'color 0.3s',
-              }}>
-                {i + 1}/3
-              </p>
-              {/* Label */}
-              <p style={{
-                fontSize: 12, fontWeight: 800, lineHeight: 1.2,
-                color: isActive ? '#F1F5F9' : 'rgba(255,255,255,0.2)',
-                transition: 'color 0.3s', textTransform: 'uppercase',
-                letterSpacing: '0.04em',
-              }}>
-                {step.label}
-              </p>
-              {/* Desc */}
-              <p style={{
-                fontSize: 10, marginTop: 3, lineHeight: 1.3,
-                color: isActive ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.1)',
-                transition: 'color 0.3s',
-              }}>
-                {step.desc}
-              </p>
-              {/* Barra de progreso */}
-              <div style={{ height: 2, marginTop: 8, background: 'rgba(255,255,255,0.06)' }}>
-                <div key={`${i}-${tick}`} style={{
-                  height: '100%', background: accent,
-                  width: isActive ? '100%' : '0%',
-                  transition: isActive && started ? `width ${progressDuration} linear` : 'none',
-                }} />
-              </div>
-            </button>
-          )
-        })}
+        {/* Handle */}
+        <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 pointer-events-none z-10"
+          style={{
+            left: `${pos}%`,
+            width: 44, height: 44, borderRadius: '50%',
+            background: 'white',
+            boxShadow: '0 3px 16px rgba(0,0,0,0.5), 0 0 0 2px rgba(0,144,255,0.6)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+          <svg width="18" height="12" viewBox="0 0 18 12" fill="none">
+            <path d="M6 6H1M1 6L4 3M1 6L4 9" stroke="#0090FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M12 6H17M17 6L14 3M17 6L14 9" stroke="#0090FF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+
+        {/* Indicadores de imagen activa */}
+        <div className="absolute bottom-3 pointer-events-none z-10"
+          style={{ right: '12px', display: 'flex', gap: 5 }}>
+          {AFTER_IMAGES.map((_, i) => (
+            <div key={i} style={{
+              width: i === slotA ? 18 : 5, height: 5, borderRadius: 3,
+              background: i === slotA ? '#0090FF' : 'rgba(255,255,255,0.35)',
+              transition: 'width 0.3s, background 0.3s',
+            }} />
+          ))}
+        </div>
+
+        {/* Hint */}
+        {!userDragged && (
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none"
+            style={{
+              fontSize: 10, fontWeight: 600, letterSpacing: '0.1em',
+              color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase',
+              background: 'rgba(0,0,0,0.4)', padding: '4px 12px', borderRadius: 20,
+            }}>
+            arrastrá para comparar
+          </div>
+        )}
       </div>
     </div>
   )
@@ -302,85 +237,61 @@ function Hero() {
         background: 'radial-gradient(ellipse 60% 50% at 75% 55%, rgba(0,144,255,0.07) 0%, transparent 70%)',
       }} />
 
-      <div className="relative z-10 max-w-6xl mx-auto px-6 pt-24 pb-20 w-full">
-        <div className="flex flex-col lg:flex-row items-center justify-between gap-4 lg:gap-14">
+      <div className="relative z-10 max-w-7xl mx-auto px-6 pt-24 pb-16 w-full">
 
-          {/* Texto principal — "contents" en mobile para poder intercalar el mockup */}
-          <div className="contents lg:flex lg:flex-col lg:max-w-2xl">
-
-            {/* Badge + título — va primero siempre */}
-            <div className="order-1">
-              <p className="text-xs font-semibold tracking-[0.2em] uppercase mb-8 flex items-center gap-2"
-                style={{ color: '#0090FF' }}>
-                <span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: '#06D6A0' }} />
-                Herramienta de IA · Automotoras
-              </p>
-
-              <h1 className="font-heading leading-[1.05] mb-6">
-                <span className="block text-2xl md:text-3xl lg:text-4xl font-light"
-                  style={{ color: '#94A3B8' }}>
-                  Sólo cargá las imágenes.
-                </span>
-                <span className="block text-5xl md:text-6xl lg:text-7xl font-extrabold mt-2"
-                  style={{ color: '#F1F5F9' }}>
-                  AutoFondo hace el resto.
-                </span>
-              </h1>
-            </div>
-
-            {/* Párrafo + botones — en mobile va DESPUÉS del mockup */}
-            <div className="order-3 lg:order-2">
-              <p className="text-base md:text-lg mb-10 max-w-xl leading-relaxed"
-                style={{ color: '#94A3B8' }}>
-                En segundos tenés todo el set listo para publicar. La IA recorta, genera
-                fondos profesionales (showroom, estudio, exteriores) y los mantiene
-                consistentes en todas las fotos del mismo auto. Tu fondo, tu logo, toda la
-                flota — sin Photoshop, sin diseñadores, sin esperas.
-              </p>
-
-              <div className="flex items-center gap-4 flex-wrap">
-                <a href="/app"
-                  className="flex items-center gap-2 px-6 py-3 rounded-full font-semibold text-white text-sm transition-all"
-                  style={{ background: '#0090FF' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#007AE6'}
-                  onMouseLeave={e => e.currentTarget.style.background = '#0090FF'}
-                >
-                  Probar demo
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2"
-                    viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
-                </a>
-                <a href="https://wa.link/8btz8r"
-                  target="_blank" rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-6 py-3 rounded-full font-semibold text-sm border transition-colors"
-                  style={{ borderColor: '#1E293B', color: '#94A3B8' }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = '#94A3B8'; e.currentTarget.style.color = '#F1F5F9' }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = '#1E293B'; e.currentTarget.style.color = '#94A3B8' }}
-                >
-                  Consultar por WhatsApp
-                </a>
-              </div>
-            </div>
-          </div>
-
-          {/* Mockup proceso 3 estados — en mobile va entre el título y el párrafo */}
-          <div className="order-2 lg:order-3">
-            <ProcesoMockup />
+        {/* Texto centrado arriba */}
+        <div className="text-center max-w-3xl mx-auto mb-10">
+          <h1 className="font-heading leading-[1.08] mb-6">
+            <span className="block text-2xl md:text-4xl font-semibold" style={{ color: '#F1F5F9' }}>
+              Sólo cargá las imágenes.
+            </span>
+            <span className="block text-3xl md:text-5xl lg:text-6xl font-extrabold mt-2" style={{ color: '#94A3B8' }}>
+              AutoFondo hace el resto.
+            </span>
+          </h1>
+          <div className="flex items-center justify-center gap-4 flex-wrap mt-8">
+            <a href="/login"
+              className="flex items-center gap-2 px-6 py-3 rounded-full font-semibold text-white text-sm transition-all"
+              style={{ background: '#0090FF' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#007AE6'}
+              onMouseLeave={e => e.currentTarget.style.background = '#0090FF'}
+            >
+              Probar demo
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2"
+                viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7" /></svg>
+            </a>
+            <a href="https://wa.link/8btz8r"
+              target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-2 px-6 py-3 rounded-full font-semibold text-sm border transition-colors"
+              style={{ borderColor: '#1E293B', color: '#94A3B8' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = '#94A3B8'; e.currentTarget.style.color = '#F1F5F9' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = '#1E293B'; e.currentTarget.style.color = '#94A3B8' }}
+            >
+              Consultar por WhatsApp
+            </a>
           </div>
         </div>
 
-        {/* Stats — fila debajo en desktop */}
-        <div className="hidden lg:flex items-center gap-12 mt-16 pt-10"
-          style={{ borderTop: '1px solid #1E293B' }}>
-          {[
-            { num: '<5 seg', label: 'por foto' },
-            { num: '×10',   label: 'más rápido que manual' },
-            { num: '100%',  label: 'automático' },
-          ].map(({ num, label }) => (
-            <div key={label}>
-              <p className="font-heading font-extrabold text-3xl" style={{ color: '#F1F5F9' }}>{num}</p>
-              <p className="text-[11px] font-medium mt-0.5" style={{ color: '#475569' }}>{label}</p>
-            </div>
-          ))}
+        {/* Reveal */}
+        <div className="max-w-4xl mx-auto">
+          <BeforeAfterReveal />
+        </div>
+
+        {/* CTA editorial */}
+        <div className="mt-10 pt-8 text-center" style={{ borderTop: '1px solid #1E293B' }}>
+          <p className="font-heading text-xl md:text-2xl leading-snug mb-5" style={{ color: '#F1F5F9' }}>
+            <span className="font-normal" style={{ color: '#94A3B8' }}>El auto que mejor se ve</span>
+            <br />
+            <span className="font-extrabold" style={{ color: '#F1F5F9' }}>es el primero que se vende.</span>
+          </p>
+          <a href="/login"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full font-semibold text-sm border transition-colors"
+            style={{ borderColor: '#0090FF', color: '#0090FF' }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#0090FF'; e.currentTarget.style.color = '#fff' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#0090FF' }}
+          >
+            Probalo gratis hoy →
+          </a>
         </div>
       </div>
     </section>
@@ -390,11 +301,11 @@ function Hero() {
 // ── Cómo funciona — en 3 pasos ─────────────────────────────────────────────────
 function TresEstados() {
   const pasos = [
-    { n: '1', accion: 'Cargás las fotos',       img: '/Auto_Con_Fondo.png', fit: 'cover',
+    { n: '1', accion: 'Cargás las fotos',       img: '/original.png', fit: 'cover',
       desc: 'Subís el lote del auto de una sola vez. No importa dónde estén tomadas.' },
-    { n: '2', accion: 'Elegís el fondo',         img: '/Auto_Sin_Fondo.png', fit: 'contain',
+    { n: '2', accion: 'Elegís el fondo',         img: '/pasos.png', fit: 'cover',
       desc: 'Gris, el tuyo, o una escena por IA (showroom, estudio…). La IA recorta y arma todo.' },
-    { n: '3', accion: 'Descargás o publicás',    img: '/auto_Final.png',     fit: 'cover',
+    { n: '3', accion: 'Descargás o publicás',    img: '/con_Autohub.png',    fit: 'cover',
       desc: 'Con tu logo, todo el lote listo para publicar donde lo necesites.' },
   ]
   return (
@@ -455,8 +366,8 @@ function Funciones() {
     { n: '03', title: 'Consistencia entre las fotos',     desc: 'Las fotos del mismo auto comparten el mismo escenario en todos los ángulos. Catálogo prolijo y parejo, no un collage.' },
     { n: '04', title: 'Sombra 3D realista',               desc: 'La IA proyecta la sombra siguiendo el ángulo del vehículo, apoyada en el piso. Se ve real sobre cualquier fondo.' },
     { n: '05', title: 'Mejorá fotos de baja calidad',     desc: 'Más resolución e iluminación pareja con IA. Fotos de celular que quedan a estándar de catálogo.' },
-    { n: '06', title: 'Tapado automático de matrícula',   desc: 'Detecta y tapa la chapa antes de publicar. Con negro o con tu logo, sin edición manual.' },
-    { n: '07', title: 'Marca de agua anti-robo',          desc: 'Tu logo en todo el lote con un clic — incluso en mosaico, para que nadie reuse tus fotos.' },
+    { n: '06', title: 'Tapado automático de matrícula',   desc: 'Detecta y anula la chapa antes de publicar, sin edición manual.' },
+    { n: '07', title: 'Marca de agua anti-robo',          desc: 'Tu logo en todo el lote con un clic, para que nadie reuse tus fotos.' },
     { n: '08', title: 'Publicación directa',              desc: null, isPublish: true },
   ]
 
@@ -524,7 +435,7 @@ function Funciones() {
 
         {/* CTA text link — sin botones llamativos */}
         <div className="mt-12 flex items-center gap-6">
-          <a href="/app"
+          <a href="/login"
             className="inline-flex items-center gap-2 text-sm font-semibold transition-colors"
             style={{ color: '#0090FF' }}
             onMouseEnter={e => e.currentTarget.style.opacity = '0.7'}
