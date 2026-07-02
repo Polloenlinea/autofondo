@@ -298,14 +298,44 @@ function Hero() {
   )
 }
 
+// ── Imagen ciclante para el paso 3 ───────────────────────────────────────────
+const PASO3_IMGS = ['/Paso3A.jpg', '/Paso3B.jpg', '/Paso3C.jpg']
+
+function CyclingImg({ imgs, alt }) {
+  const curRef  = useRef(0)
+  const [cur, setCur]   = useState(0)
+  const [next, setNext] = useState(null)
+  const [nVis, setNVis] = useState(false)
+
+  useEffect(() => {
+    const t = setInterval(() => {
+      const n = (curRef.current + 1) % imgs.length
+      setNext(n)
+      requestAnimationFrame(() => requestAnimationFrame(() => setNVis(true)))
+      setTimeout(() => { curRef.current = n; setCur(n); setNext(null); setNVis(false) }, 600)
+    }, 3000)
+    return () => clearInterval(t)
+  }, [imgs.length])
+
+  return (
+    <div className="relative w-full rounded-lg overflow-hidden" style={{ aspectRatio: '4/3' }}>
+      <img src={imgs[cur]} alt={alt} className="absolute inset-0 w-full h-full" style={{ objectFit: 'cover' }} />
+      {next !== null && (
+        <img src={imgs[next]} alt={alt} className="absolute inset-0 w-full h-full"
+          style={{ objectFit: 'cover', opacity: nVis ? 1 : 0, transition: 'opacity 0.5s ease-in-out' }} />
+      )}
+    </div>
+  )
+}
+
 // ── Cómo funciona — en 3 pasos ─────────────────────────────────────────────────
 function TresEstados() {
   const pasos = [
-    { n: '1', accion: 'Cargás las fotos',       img: '/original.png', fit: 'cover',
+    { n: '1', accion: 'Cargás las fotos',    img: '/paso1.jpg', fit: 'cover',
       desc: 'Subís el lote del auto de una sola vez. No importa dónde estén tomadas.' },
-    { n: '2', accion: 'Elegís el fondo',         img: '/pasos.png', fit: 'cover',
+    { n: '2', accion: 'Elegís el fondo',      img: '/paso2.jpg', fit: 'cover',
       desc: 'Gris, el tuyo, o una escena por IA (showroom, estudio…). La IA recorta y arma todo.' },
-    { n: '3', accion: 'Descargás o publicás',    img: '/con_Autohub.png',    fit: 'cover',
+    { n: '3', accion: 'Descargás o publicás', img: null, fit: 'cover',
       desc: 'Con tu logo, todo el lote listo para publicar donde lo necesites.' },
   ]
   return (
@@ -340,9 +370,11 @@ function TresEstados() {
                 </span>
                 <span className="font-heading font-bold text-lg" style={{ color: '#F1F5F9' }}>{p.accion}</span>
               </div>
-              <img src={p.img} alt={p.accion} className="w-full rounded-lg"
-                style={{ aspectRatio: '4/3', objectFit: p.fit, display: 'block',
-                  background: p.fit === 'contain' ? 'rgba(255,255,255,0.03)' : undefined }} />
+              {p.img === null
+                ? <CyclingImg imgs={PASO3_IMGS} alt={p.accion} />
+                : <img src={p.img} alt={p.accion} className="w-full rounded-lg"
+                    style={{ aspectRatio: '4/3', objectFit: p.fit, display: 'block' }} />
+              }
               <p className="text-[13px] mt-4 leading-relaxed" style={{ color: 'rgba(255,255,255,0.35)' }}>
                 {p.desc}
               </p>
