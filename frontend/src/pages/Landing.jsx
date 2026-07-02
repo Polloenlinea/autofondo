@@ -19,6 +19,13 @@ function Nav() {
               {l}
             </a>
           ))}
+          <a href="https://artificialmente.uy/herramientas/autohub"
+            className="text-sm transition-colors flex items-center gap-1.5"
+            style={{ color: 'rgba(255,255,255,0.25)' }}
+            onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.6)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.25)'}>
+            ← AutoHub
+          </a>
         </div>
 
         {/* CTAs */}
