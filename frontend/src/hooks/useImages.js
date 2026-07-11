@@ -34,7 +34,33 @@ export function useImages() {
     }
     if (!ok.length) return
 
-    const newImgs = ok.map(f => ({
+    // Comprimir y corregir rotación EXIF en el navegador antes de subir.
+    // El canvas redibuja la imagen respetando la orientación real, y la achica
+    // a máx 1920px — fotos de celular/tablet pasan de ~3 MB a ~300-500 KB.
+    const compress = (file) => new Promise((resolve) => {
+      const MAX = 1920
+      const QUALITY = 0.82
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height))
+        const w = Math.round(img.width  * scale)
+        const h = Math.round(img.height * scale)
+        const canvas = document.createElement('canvas')
+        canvas.width = w; canvas.height = h
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h)
+        canvas.toBlob(blob => {
+          resolve(new File([blob], file.name.replace(/\.\w+$/, '.jpg'), { type: 'image/jpeg' }))
+        }, 'image/jpeg', QUALITY)
+      }
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file) } // fallback: usar original
+      img.src = url
+    })
+
+    const compressed = await Promise.all(ok.map(compress))
+
+    const newImgs = compressed.map(f => ({
       id: uid(), file: f,
       previewUrl: URL.createObjectURL(f),
       detectedType: 'exterior',

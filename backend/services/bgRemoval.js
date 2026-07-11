@@ -30,6 +30,10 @@ async function removeBg(buffer, opts = null) {
   const { model: modelOverride = null, engine = 'imgly' } =
     typeof opts === 'string' ? { model: opts } : (opts || {})
 
+  // Normalizar orientación EXIF antes de cualquier procesamiento
+  // (fotos de celular/tablet traen rotación en metadata — .rotate() sin args la aplica y la elimina)
+  buffer = await sharp(buffer).rotate().toBuffer()
+
   // Dimensiones originales para reconstruir el canvas
   const { width: origW, height: origH } = await sharp(buffer).metadata()
 
