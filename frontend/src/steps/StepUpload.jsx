@@ -1,32 +1,94 @@
 import { useState, useRef, useEffect } from 'react'
-import { Camera, Images, Plus, X, Check, AlertTriangle, ShieldCheck, Zap, Star, Play } from 'lucide-react'
+import { Camera, Images, Plus, X, Check, AlertTriangle, ShieldCheck, Zap, Star, FolderOpen } from 'lucide-react'
 
 const DEMO_FILES = [
   '32bb1d56.jpg','7f057d7e.jpg','9d50e2a5-0f79-4895-a9c1-031187afc223.png',
   'CAR572178-1-1.jpg','ce93641b.jpg','ej01.png','f25556fd.jpg',
 ]
 
-export default function StepUpload({ images, rejected, addFiles, toggleType, effectiveType, removeImage, onZoom, onNext, stats, plateOptions, onPlateOptions }) {
-  const [dragging,     setDragging]     = useState(false)
-  const [loadingDemo,  setLoadingDemo]  = useState(false)
-  const inputRef   = useRef()
-  const cameraRef  = useRef()
+function DemoPicker({ onAdd }) {
+  const [open,     setOpen]     = useState(false)
+  const [selected, setSelected] = useState(new Set())
+  const [loading,  setLoading]  = useState(false)
 
-  const loadDemo = async () => {
-    setLoadingDemo(true)
+  const toggle = (name) => setSelected(prev => {
+    const next = new Set(prev)
+    next.has(name) ? next.delete(name) : next.add(name)
+    return next
+  })
+
+  const confirm = async () => {
+    if (!selected.size) return
+    setLoading(true)
     try {
-      const fetches = await Promise.all(
-        DEMO_FILES.map(name =>
+      const files = await Promise.all(
+        [...selected].map(name =>
           fetch(`/demo/${name}`)
             .then(r => r.blob())
             .then(blob => new File([blob], name, { type: blob.type }))
         )
       )
-      addFiles(fetches)
+      onAdd(files)
+      setSelected(new Set())
+      setOpen(false)
     } finally {
-      setLoadingDemo(false)
+      setLoading(false)
     }
   }
+
+  if (!open) return (
+    <button
+      onClick={() => setOpen(true)}
+      className="flex items-center gap-1.5 px-4 py-2 bg-slate-100 text-slate-500 rounded-xl text-sm font-semibold
+        hover:bg-slate-200 active:scale-95 transition-all">
+      <FolderOpen size={15} /> Fotos de muestra
+    </button>
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      onClick={() => setOpen(false)}>
+      <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden"
+        onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <span className="font-bold text-slate-700 text-sm">Fotos de muestra</span>
+          <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="p-3 grid grid-cols-3 gap-2 max-h-72 overflow-y-auto">
+          {DEMO_FILES.map(name => {
+            const sel = selected.has(name)
+            return (
+              <button key={name} onClick={() => toggle(name)}
+                className={`relative rounded-xl overflow-hidden border-2 transition-all aspect-[4/3]
+                  ${sel ? 'border-blue-500 ring-2 ring-blue-200' : 'border-slate-200 hover:border-slate-300'}`}>
+                <img src={`/demo/${name}`} className="w-full h-full object-cover" alt="" />
+                {sel && (
+                  <div className="absolute top-1 left-1 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center shadow">
+                    <Check size={10} className="text-white" strokeWidth={3} />
+                  </div>
+                )}
+              </button>
+            )
+          })}
+        </div>
+        <div className="px-3 pb-3">
+          <button onClick={confirm} disabled={!selected.size || loading}
+            className="w-full h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm
+              disabled:opacity-40 transition-all">
+            {loading ? 'Cargando…' : selected.size ? `Agregar ${selected.size} foto${selected.size !== 1 ? 's' : ''}` : 'Seleccioná fotos'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function StepUpload({ images, rejected, addFiles, toggleType, effectiveType, removeImage, onZoom, onNext, stats, plateOptions, onPlateOptions }) {
+  const [dragging, setDragging] = useState(false)
+  const inputRef   = useRef()
+  const cameraRef  = useRef()
 
   const exterior = images.filter(img => effectiveType(img) === 'exterior')
 
@@ -88,14 +150,7 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
                 <span className="sm:hidden">Galería</span>
                 <span className="hidden sm:inline">Seleccionar archivos</span>
               </button>
-              <button
-                onClick={loadDemo}
-                disabled={loadingDemo}
-                className="flex items-center gap-1.5 px-4 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl text-sm font-semibold
-                  hover:bg-amber-100 active:scale-95 transition-all disabled:opacity-50">
-                <Play size={15} />
-                {loadingDemo ? 'Cargando…' : 'Demo'}
-              </button>
+              <DemoPicker onAdd={addFiles} />
             </div>
           </>
         )}
