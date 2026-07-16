@@ -1,10 +1,9 @@
-import { Upload, Scissors, Image, Download, Check } from 'lucide-react'
+import { Upload, Image, Download, Check } from 'lucide-react'
 
 const STEPS = [
   { label: 'Fotos',    Icon: Upload   },
-  { label: 'Revisar',  Icon: Scissors },
   { label: 'Fondo',    Icon: Image    },
-  { label: 'Exportar', Icon: Download },
+  { label: 'Resultado', Icon: Download },
 ]
 
 export default function StepBar({ current }) {

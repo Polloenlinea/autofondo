@@ -3,7 +3,6 @@ import { History, Save } from 'lucide-react'
 import StepBar        from './components/StepBar'
 import ConfirmDialog  from './components/ConfirmDialog'
 import StepUpload     from './steps/StepUpload'
-import StepReview     from './steps/StepReview'
 import StepBackground from './steps/StepBackground'
 import StepExport     from './steps/StepExport'
 import SessionsPanel  from './components/SessionsPanel'
@@ -94,7 +93,7 @@ export default function App() {
       setEditingImgId(null)
       setZoomImgId(null)
       setShowSessions(false)
-      setStep(3)
+      setStep(2)
     }
     guard(doContinue, {
       title: 'Retomar borrador',
@@ -197,47 +196,30 @@ export default function App() {
           />
         )}
         {step === 1 && (
-          <StepReview
+          <StepBackground
             images={images} effectiveType={effectiveType}
-            toggleType={toggleType} processAll={processAll}
-            reprocess={reprocess} applyAdjustments={applyAdjustments}
-            applyBlobSelection={applyBlobSelection}
-            removeImage={removeImage}
-            stats={stats}
+            processAll={processAll} reprocess={reprocess}
+            applyAdjustments={applyAdjustments} applyBlobSelection={applyBlobSelection}
+            setComposed={setComposed} stats={stats} removeImage={removeImage}
             plateOptions={plateOptions}
-            onEdit={(id) => openEdit(id, 'review')}
+            onEdit={(id) => openEdit(id, 'background')}
             onZoom={(id) => setZoomImgId(id)}
-            onNext={(size) => { if (size) setOutputSize(size); setStep(2) }}
-            onBack={() => guard(() => { resetProcessing(); setStep(0) }, {
+            onNext={() => setStep(2)}
+            onBack={() => guard(() => { clearComposed(); resetProcessing(); setStep(0) }, {
               title: 'Volver a cargar fotos',
-              message: 'Al volver se van a perder los recortes ya procesados y vas a tener que procesarlos de nuevo. ¿Volver igual?',
+              message: 'Al volver se van a perder los recortes procesados y los fondos aplicados. ¿Volver igual?',
               confirmLabel: 'Volver y borrar',
-              when: hasCutouts,
+              when: hasCutouts || hasComposed,
             })}
           />
         )}
         {step === 2 && (
-          <StepBackground
-            images={images} effectiveType={effectiveType}
-            setComposed={setComposed} stats={stats} removeImage={removeImage}
-            onEdit={(id) => openEdit(id, 'background')}
-            onZoom={(id) => setZoomImgId(id)}
-            onNext={() => setStep(3)}
-            onBack={() => guard(() => { clearComposed(); setStep(1) }, {
-              title: 'Volver a Revisar',
-              message: 'Al volver se van a quitar los fondos ya aplicados (los recortes se mantienen). ¿Volver igual?',
-              confirmLabel: 'Volver',
-              when: hasComposed,
-            })}
-          />
-        )}
-        {step === 3 && (
           <StepExport
             images={images} effectiveType={effectiveType}
             outputSize={outputSize} removeImage={removeImage}
             onEdit={(id) => openEdit(id, 'export')}
             onZoom={(id) => setZoomImgId(id)}
-            onBack={() => setStep(2)} onReset={requestReset}
+            onBack={() => setStep(1)} onReset={requestReset}
             onSaveDraft={() => setShowSaveModal(true)}
           />
         )}

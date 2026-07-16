@@ -1,22 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { ImagePlus, X, RefreshCw, Check, ChevronDown, ChevronUp, AlertCircle, Pencil, Sparkles } from 'lucide-react'
-import { Btn, Slider, Toggle, Card, SectionLabel, Spinner } from '../components/ui'
+import { ImagePlus, X, Check, AlertCircle, Pencil, Sparkles, Loader2, ZoomIn, ArrowLeft, Play, ChevronRight } from 'lucide-react'
+import { Slider, Toggle, Spinner } from '../components/ui'
 import { composeImage } from '../services/api'
 import { useBgHistory } from '../hooks/useBgHistory'
 import { BG_PRESETS, AI_SCENES } from '../constants/bgPresets'
 
 function useDebounce(value, delay) {
   const [dv, setDv] = useState(value)
-  useEffect(() => {
-    const t = setTimeout(() => setDv(value), delay)
-    return () => clearTimeout(t)
-  }, [value, delay])
+  useEffect(() => { const t = setTimeout(() => setDv(value), delay); return () => clearTimeout(t) }, [value, delay])
   return dv
 }
 
-// Compone con reintento: si el backend se reinicia (OneDrive evict / hiccup), la
-// petición falla ("Failed to fetch" / JSON cortado). Reintentamos con espera para
-// darle tiempo a volver, en vez de cortar el lote con error.
 async function composeWithRetry(args, signal, attempts = 3) {
   let lastErr = null
   for (let i = 1; i <= attempts; i++) {
@@ -34,122 +28,96 @@ async function composeWithRetry(args, signal, attempts = 3) {
 }
 
 export default function StepBackground({
-  images, effectiveType, setComposed, stats, removeImage,
-  onEdit, onZoom,
-  onNext, onBack,
+  images, effectiveType,
+  processAll, reprocess, applyAdjustments, applyBlobSelection,
+  setComposed, stats, removeImage,
+  plateOptions,
+  onEdit, onZoom, onNext, onBack,
 }) {
+  const processRanRef  = useRef(false)
+  const processStopRef = useRef(false)
+  useEffect(() => {
+    if (!processRanRef.current && processAll) {
+      processRanRef.current = true; processStopRef.current = false
+      processAll(processStopRef, plateOptions)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const [preset,       setPreset]       = useState('azul')
   const [customFile,   setCustomFile]   = useState(null)
   const [customUrl,    setCustomUrl]    = useState(null)
-  // Fondo con IA: id de escena activa (o 'custom') + texto libre
   const [aiSceneId,    setAiSceneId]    = useState(null)
   const [customPrompt, setCustomPrompt] = useState('')
-  const [scale,   setScale]   = useState(80)
-  const [posX,    setPosX]    = useState(50)
-  const [posY,    setPosY]    = useState(60)
-  const [shadow,     setShadow]     = useState(false)   // OFF por defecto (no gasta IA)
-  const [shadowIntensity,     setShadowIntensity]     = useState(100)
-  // Mejoras IA (viajan en la misma llamada a Photoroom, sin costo extra)
-  const [upscale, setUpscale] = useState(false)
-  const [relight, setRelight] = useState(false)
-  const [applying,      setApplying]      = useState(false)
-  const [stopping,      setStopping]      = useState(false)
-  const [progress,      setProgress]      = useState(0)
-  const [composeError,  setComposeError]  = useState(null)
-  const [showAiPanel,   setShowAiPanel]   = useState(false)
-  const [showPosition,  setShowPosition]  = useState(false)
-  const [showMejoras,   setShowMejoras]   = useState(false)
-  // Selección de fotos para aplicar fondos distintos por grupo (vacío = todas)
-  const [selected, setSelected] = useState(() => new Set())
+  const [showPrompt,   setShowPrompt]   = useState(false)
+  const [scale,        setScale]        = useState(80)
+  const [posX,         setPosX]         = useState(50)
+  const [posY,         setPosY]         = useState(60)
+  const [shadow,       setShadow]       = useState(false)
+  const [shadowIntensity, setShadowIntensity] = useState(100)
+  const [upscale,      setUpscale]      = useState(false)
+  const [relight,      setRelight]      = useState(false)
+  const [applying,     setApplying]     = useState(false)
+  const [stopping,     setStopping]     = useState(false)
+  const [progress,     setProgress]     = useState(0)
+  const [composeError, setComposeError] = useState(null)
+  const [readyToView,  setReadyToView]  = useState(false)   // true después de aplicar exitosamente
+  const [selected,     setSelected]     = useState(() => new Set())
   const stopRef    = useRef(false)
   const applyToken = useRef(0)
   const abortRef   = useRef(null)
+  const customImgRef = useRef()
 
-  const toggleSelected = (id) => setSelected(prev => {
-    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
-  })
-  const clearSelected = () => setSelected(new Set())
+  const toggleSelected = id => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const selectAll      = () => setSelected(new Set(exteriorDone.map(i => i.id)))
+  const clearSelected  = () => setSelected(new Set())
 
   const { recent: recentBgs, addBg, deleteBg } = useBgHistory()
 
-  const exteriorDone  = images.filter(i => effectiveType(i) === 'exterior' && i.status === 'done')
-  const composedCount = images.filter(i => i.composedB64).length
+  const allExterior     = images.filter(i => effectiveType(i) === 'exterior')
+  const exteriorDone    = allExterior.filter(i => i.status === 'done')
+  const processingCount = allExterior.filter(i => ['processing','idle','pending'].includes(i.status)).length
+  const composedCount   = images.filter(i => i.composedB64).length
 
-  // Fondo IA: prompt activo (escena preset o texto libre). Se aplica MANUALMENTE
-  // (botón Aplicar), nunca en auto, porque cada generación consume cupo de Photoroom.
-  const aiPrompt = aiSceneId === 'custom'
-    ? customPrompt.trim()
-    : (AI_SCENES.find(s => s.id === aiSceneId)?.prompt || '')
-  const useAi = !!(aiSceneId && aiPrompt)
+  const aiPrompt = aiSceneId === 'custom' ? customPrompt.trim() : (AI_SCENES.find(s => s.id === aiSceneId)?.prompt || '')
+  const useAi    = !!(aiSceneId && aiPrompt)
+  const hasBg    = useAi || preset || customFile
 
-  const hasBg = useAi || preset || customFile
-
-  const dScale      = useDebounce(scale,      700)
-  const dPosX       = useDebounce(posX,       700)
-  const dPosY       = useDebounce(posY,       700)
-  const dShadow     = useDebounce(shadow,     700)
+  const dScale      = useDebounce(scale,     700)
+  const dPosX       = useDebounce(posX,      700)
+  const dPosY       = useDebounce(posY,      700)
+  const dShadow     = useDebounce(shadow,    700)
   const dShadowInt  = useDebounce(shadowIntensity, 700)
-  const dUpscale    = useDebounce(upscale, 700)
-  const dRelight    = useDebounce(relight, 700)
-
+  const dUpscale    = useDebounce(upscale,   700)
+  const dRelight    = useDebounce(relight,   700)
   const exteriorIds = exteriorDone.map(i => i.id).join(',')
 
+  // Cuando el usuario cambia fondo, vuelve al estado "aplicar"
+  const markDirty = () => setReadyToView(false)
+
+  const selectPreset  = id => { setPreset(id); setCustomFile(null); setCustomUrl(null); setAiSceneId(null); markDirty() }
+  const selectAiScene = id => { setAiSceneId(id); setPreset(null); setCustomFile(null); setCustomUrl(null); setShadow(false); markDirty() }
+
+  // Auto-apply para fondos comunes (sin IA, sin sombra, sin selección)
   useEffect(() => {
-    // Auto-apply SOLO el fondo inicial (gris) cuando todavía no hay nada compuesto.
-    // Una vez que hay resultados, los cambios se aplican con el botón (para no pisar
-    // los fondos por-grupo). Tampoco corre con IA ni con selección activa.
     if (!hasBg || !exteriorDone.length || useAi || selected.size > 0 || dShadow) return
-
-    const snap = {
-      imgs: [...exteriorDone],
-      bgFile: customFile, preset: customFile ? null : preset,
-      scale: dScale, posX: dPosX, posY: dPosY, shadow: dShadow,
-      shadowIntensity: dShadowInt,
-      upscale: dUpscale, relight: dRelight,
-    }
-
+    const snap = { imgs: [...exteriorDone], bgFile: customFile, preset: customFile ? null : preset, scale: dScale, posX: dPosX, posY: dPosY, shadowIntensity: dShadowInt, upscale: dUpscale, relight: dRelight }
     const myToken = ++applyToken.current
-
-    setApplying(true)
-    setComposeError(null)
-    setProgress(0)
+    setApplying(true); setComposeError(null); setProgress(0); setReadyToView(false)
     let done = 0
-
     ;(async () => {
       for (const img of snap.imgs) {
         if (applyToken.current !== myToken) break
         if (!img.cutoutB64) { done++; continue }
         try {
-          const res = await composeWithRetry({
-            cutoutB64: img.cutoutB64,
-            bgFile: snap.bgFile, preset: snap.preset,
-            scale: snap.scale, posX: snap.posX, posY: snap.posY,
-            shadow: false,     // nunca preview de sombra — la sombra gratis queda mal; solo se aplica con IA al hacer clic en Aplicar
-            aiShadow: false,
-            shadowIntensity: snap.shadowIntensity,
-            upscale: snap.upscale, relight: snap.relight,
-          }, null)
+          const res = await composeWithRetry({ cutoutB64: img.cutoutB64, bgFile: snap.bgFile, preset: snap.preset, scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: false, aiShadow: false, shadowIntensity: snap.shadowIntensity, upscale: snap.upscale, relight: snap.relight }, null)
           if (applyToken.current !== myToken) break
-          if (res.ok) {
-            setComposed(img.id, res.image, {
-              bgFile: snap.bgFile, preset: snap.preset,
-              scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: false,
-              shadowIntensity: snap.shadowIntensity,
-              upscale: snap.upscale, relight: snap.relight,
-            })
-          } else {
-            if (applyToken.current === myToken)
-              setComposeError(res.error || 'Error al aplicar el fondo')
-          }
-        } catch (err) {
-          if (applyToken.current === myToken)
-            setComposeError('Error de conexión: ' + (err?.message || 'desconocido'))
-        }
+          if (res.ok) setComposed(img.id, res.image, { bgFile: snap.bgFile, preset: snap.preset, scale: snap.scale, posX: snap.posX, posY: snap.posY, shadow: false, shadowIntensity: snap.shadowIntensity, upscale: snap.upscale, relight: snap.relight })
+          else if (applyToken.current === myToken) setComposeError(res.error || 'Error')
+        } catch (err) { if (applyToken.current === myToken) setComposeError('Error: ' + (err?.message || '')) }
         done++
-        if (applyToken.current === myToken)
-          setProgress(Math.round(done / snap.imgs.length * 100))
+        if (applyToken.current === myToken) setProgress(Math.round(done / snap.imgs.length * 100))
       }
-      if (applyToken.current === myToken) setApplying(false)
+      if (applyToken.current === myToken) { setApplying(false); setReadyToView(true) }
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dScale, dPosX, dPosY, dShadow, dShadowInt, dUpscale, dRelight, preset, customFile, exteriorIds])
@@ -159,442 +127,347 @@ export default function StepBackground({
     const token = applyToken.current
     const controller = new AbortController()
     abortRef.current = controller
-    setApplying(true); setStopping(false); stopRef.current = false; setProgress(0); setComposeError(null)
-    // Destino: si hay selección, solo esas; si no, todas las exteriores
+    setApplying(true); setStopping(false); stopRef.current = false; setProgress(0); setComposeError(null); setReadyToView(false)
     const sel = exteriorDone.filter(i => selected.has(i.id))
     const targets = sel.length ? sel : exteriorDone
-    const bgCfgBase = {
-      bgFile: customFile, preset: customFile ? null : preset,
-      scale, posX, posY, shadow, shadowIntensity,
-      upscale, relight,
-    }
-    // Consistencia IA: mismo seed para todo el grupo + la 1ª escena como referencia
     const seed = useAi ? Math.floor(Math.random() * 1e6) : null
-    let guidanceB64 = null
-    let done = 0
+    let guidanceB64 = null; let done = 0
     for (const img of targets) {
       if (stopRef.current || token !== applyToken.current) break
       if (!img.cutoutB64) { done++; continue }
       const cfg = useAi
         ? { bgPrompt: aiPrompt, upscale, relight, seed, guidanceB64 }
-        : { ...bgCfgBase, shadow, aiShadow: shadow }   // al aplicar: sombra IA paga (la buena)
+        : { bgFile: customFile, preset: customFile ? null : preset, scale, posX, posY, shadow, aiShadow: shadow, shadowIntensity, upscale, relight }
       try {
         const res = await composeWithRetry({ cutoutB64: img.cutoutB64, ...cfg }, controller.signal)
         if (res.ok) {
-          const { guidanceB64: _g, ...saveCfg } = cfg   // guidance es interno, no se guarda
+          const { guidanceB64: _g, ...saveCfg } = cfg
           setComposed(img.id, res.image, saveCfg)
-          if (useAi && !guidanceB64) guidanceB64 = res.image   // 1ª escena → referencia
-        } else {
-          setComposeError(res.error || 'Error del servidor')
-        }
-      } catch (err) {
-        setComposeError('Error de conexión: ' + (err?.message || 'desconocido'))
-      }
-      done++
-      setProgress(Math.round(done / targets.length * 100))
+          if (useAi && !guidanceB64) guidanceB64 = res.image
+        } else { setComposeError(res.error || 'Error') }
+      } catch (err) { setComposeError('Error: ' + (err?.message || '')) }
+      done++; setProgress(Math.round(done / targets.length * 100))
     }
-    setStopping(false)
-    setApplying(false)
-    clearSelected()
+    setStopping(false); setApplying(false); clearSelected(); setReadyToView(true)
   }, [exteriorDone, selected, customFile, preset, useAi, aiPrompt, scale, posX, posY, shadow, shadowIntensity, upscale, relight, setComposed])
 
-  const selectPreset = (id) => { setPreset(id); setCustomFile(null); setCustomUrl(null); setAiSceneId(null) }
-  const selectAiScene = (id) => { setAiSceneId(id); setPreset(null); setCustomFile(null); setCustomUrl(null); setShadow(false) }
+  // Etiqueta del CTA principal
+  const ctaLabel = () => {
+    if (readyToView && composedCount > 0) return `Ver resultados → ${composedCount} foto${composedCount !== 1 ? 's' : ''} lista${composedCount !== 1 ? 's' : ''}`
+    if (useAi) return selected.size === 1 ? 'Generar en esta foto' : selected.size > 1 ? `Generar en estas ${selected.size} fotos` : 'Generar con IA'
+    if (selected.size === 1) return 'Aplicar a esta foto'
+    if (selected.size > 1)  return `Aplicar a estas ${selected.size} fotos`
+    return 'Aplicar a todas las fotos'
+  }
 
-  // Thumb: imagen arriba (click = zoom) + acciones siempre visibles abajo, sin superposiciones
-  const ComposedThumb = ({ img }) => {
-    const isInterior = effectiveType(img) !== 'exterior' || img.status === 'skipped'
+  const ctaIsView = readyToView && composedCount > 0 && !applying
+
+  // ── Miniatura individual ────────────────────────────────────────────────────
+  const Thumb = ({ img }) => {
+    const isInterior   = effectiveType(img) !== 'exterior' || img.status === 'skipped'
+    const isProcessing = ['processing','idle','pending'].includes(img.status) && !img.cutoutB64
+    const isSelected   = selected.has(img.id)
     const src = img.composedB64
       ? `data:image/jpeg;base64,${img.composedB64}`
-      : img.cutoutB64
-        ? `data:image/png;base64,${img.cutoutB64}`
-        : img.previewUrl
-
-    const bgClass = img.composedB64 ? 'bg-slate-100' : img.cutoutB64 ? 'checker' : 'bg-slate-100'
-    const canEdit = onEdit && !isInterior && (img.composedB64 || img.cutoutB64)
-    const selectable = !isInterior && (img.cutoutB64 || img.composedB64)
-    const isSelected = selected.has(img.id)
+      : img.cutoutB64 ? `data:image/png;base64,${img.cutoutB64}` : img.previewUrl
+    const selectable = !isInterior && !isProcessing && (img.cutoutB64 || img.composedB64)
 
     return (
-      <div className={`rounded-xl overflow-hidden bg-white border-2 transition-colors
+      <div className={`relative rounded-xl overflow-hidden border-2 bg-white transition-all
         ${isSelected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'}`}>
-        <div className={`relative aspect-[4/3] ${bgClass} ${onZoom ? 'cursor-zoom-in' : ''}`}
-          onClick={onZoom ? () => onZoom(img.id) : undefined}>
-          <img src={src} className="w-full h-full object-contain" />
-
-          {/* Eliminar — siempre visible */}
-          {removeImage && (
-            <button
-              onClick={e => { e.stopPropagation(); removeImage(img.id) }}
-              title="Eliminar imagen"
-              className="absolute top-2 left-2 w-7 h-7 bg-black/55 text-white rounded-lg
-                flex items-center justify-center transition-colors hover:bg-red-500 active:bg-red-600 z-10">
-              <X size={13} strokeWidth={2.5} />
-            </button>
+        <div
+          className={`aspect-[4/3] relative ${img.composedB64 ? 'bg-slate-100' : img.cutoutB64 ? 'checker' : 'bg-slate-50'}`}
+          onClick={() => !isProcessing && onZoom?.(img.id)}
+          style={{ cursor: isProcessing ? 'default' : 'zoom-in' }}>
+          {isProcessing ? (
+            <>
+              <img src={src} className="w-full h-full object-contain opacity-30" />
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                <Loader2 size={16} className="text-blue-500 animate-spin" />
+                <span className="text-[9px] font-semibold text-blue-600">Recortando…</span>
+              </div>
+            </>
+          ) : (
+            <img src={src} className="w-full h-full object-contain" />
           )}
-
-          {/* Casilla de selección — para aplicar fondos por grupo */}
-          {selectable && (
-            <button
-              onClick={e => { e.stopPropagation(); toggleSelected(img.id) }}
-              title={isSelected ? 'Quitar de la selección' : 'Seleccionar para aplicar un fondo'}
-              className={`absolute top-2 right-2 w-7 h-7 rounded-lg flex items-center justify-center z-10
-                border-2 transition-colors shadow-sm
-                ${isSelected
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'bg-white/85 border-white/90 text-transparent hover:border-blue-400'}`}>
-              <Check size={14} strokeWidth={3} />
-            </button>
-          )}
-
-          {applying && !isInterior && !img.composedB64 && (
+          {applying && !isInterior && !isProcessing && !img.composedB64 && (
             <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
-              <Spinner size="sm" color="text-blue-700" />
+              <Spinner size="sm" color="text-blue-600" />
             </div>
           )}
-
           {isInterior && (
             <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <span className="text-white text-[10px] font-semibold bg-black/60 px-2 py-1 rounded-md">Interior</span>
+              <span className="text-white text-[9px] font-semibold bg-black/60 px-1.5 py-0.5 rounded">Interior</span>
             </div>
           )}
-
           {img.composedB64 && !isInterior && (
-            <div className="absolute bottom-1.5 right-1.5 w-5 h-5 bg-green-500 rounded-full
-              flex items-center justify-center shadow-sm" title="Fondo aplicado">
-              <Check size={10} className="text-white" />
+            <div className="absolute bottom-1 right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center shadow">
+              <Check size={8} className="text-white" />
             </div>
           )}
-        </div>
-
-        {/* Footer — acciones siempre visibles, nada escondido detrás de un hover */}
-        <div className="px-2 py-2 space-y-1.5">
-          {canEdit && (
-            <button
-              onClick={() => onEdit(img.id)}
-              className="w-full flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg
-                text-[11px] font-semibold transition-colors min-h-[36px]
-                bg-blue-700 text-white hover:bg-blue-800 active:bg-blue-900">
-              <Pencil size={11} /> Editar
+          {selectable && (
+            <button onClick={e => { e.stopPropagation(); toggleSelected(img.id) }}
+              className={`absolute top-1 left-1 w-5 h-5 rounded-full border-2 flex items-center justify-center z-10 transition-all
+                ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white/80 border-white/70 text-transparent hover:border-blue-400'}`}>
+              <Check size={10} strokeWidth={3} />
             </button>
           )}
-          <p className="text-[11px] text-slate-400 truncate px-1">{img.file.name}</p>
         </div>
+        <p className="text-[9px] text-slate-400 truncate px-1.5 py-1">{img.file?.name}</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-3 pb-40">
+    <div className="space-y-3 pb-32">
 
-      {/* ── Error banner ── */}
+      {/* Error */}
       {composeError && (
-        <div className="flex items-start gap-2.5 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
-          <AlertCircle size={15} className="text-red-500 mt-0.5 flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-red-700 mb-0.5">Error al aplicar el fondo</p>
-            <p className="text-[11px] text-red-500 break-words">{composeError}</p>
-          </div>
-          <button onClick={() => setComposeError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0">
-            <X size={13} />
-          </button>
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+          <AlertCircle size={13} className="text-red-500 mt-0.5 flex-shrink-0" />
+          <p className="text-xs text-red-700 flex-1">{composeError}</p>
+          <button onClick={() => setComposeError(null)}><X size={12} className="text-red-400" /></button>
         </div>
       )}
 
-      {/* ── 1. FOTOS — siempre visibles primero ── */}
-      {exteriorDone.length > 0 ? (
-        <div>
-          {/* Barra de selección por grupo */}
-          {selected.size > 0 && !applying && (
-            <div className="flex items-center gap-2 mb-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
-              <Check size={14} className="text-blue-600 flex-shrink-0" />
-              <span className="text-sm font-semibold text-blue-800">
-                {selected.size} seleccionada{selected.size !== 1 ? 's' : ''}
-              </span>
-              <span className="text-xs text-blue-500 hidden sm:inline">— elegí fondo y tocá Aplicar</span>
-              <div className="ml-auto flex items-center gap-3">
-                <button onClick={() => setSelected(new Set(exteriorDone.map(i => i.id)))}
-                  className="text-xs font-semibold text-blue-700 hover:text-blue-900">Todas</button>
-                <button onClick={clearSelected}
-                  className="text-xs font-semibold text-slate-400 hover:text-slate-600">Quitar</button>
-              </div>
-            </div>
-          )}
+      {/* ══════════════════════════════════════
+          BLOQUE 1 — FOTOS / APLICAR FONDO A
+      ══════════════════════════════════════ */}
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
 
-          {/* Estado del lote + progreso */}
-          {(applying || composedCount > 0) && (
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-slate-700">
-                  {applying
-                    ? `Aplicando… ${selected.size > 0 ? `(${selected.size} sel.)` : ''}`
-                    : `${composedCount} de ${exteriorDone.length} listas`}
-                </p>
-                {applying && (
-                  <div className="flex items-center gap-1.5">
-                    <Spinner size="xs" color="text-blue-700" />
-                    <span className="text-xs text-blue-700 font-semibold tabular-nums">{progress}%</span>
-                  </div>
-                )}
-              </div>
-              {applying && (
-                <button
-                  onClick={() => {
-                    abortRef.current?.abort()
-                    stopRef.current = true
-                    applyToken.current++
-                    setStopping(true)
-                  }}
-                  disabled={stopping}
-                  className="text-xs text-red-500 hover:text-red-700 font-medium disabled:opacity-50">
-                  {stopping ? 'Deteniendo…' : 'Detener'}
-                </button>
-              )}
-            </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 pt-3 pb-2">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Aplicar fondo a</span>
+          {exteriorDone.length > 1 && (
+            <button onClick={selected.size >= exteriorDone.length ? clearSelected : selectAll}
+              className="text-[11px] font-bold text-blue-600 hover:text-blue-800">
+              {selected.size >= exteriorDone.length ? 'Quitar ✕' : 'Todas ✓'}
+            </button>
           )}
-          {applying && (
-            <div className="h-1 bg-slate-100 rounded-full overflow-hidden mb-2.5">
-              <div className="h-full bg-blue-700 rounded-full transition-all duration-300"
-                style={{ width: `${progress}%` }} />
-            </div>
-          )}
+        </div>
 
-          {/* Grid de fotos */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-            {images.map(img => <ComposedThumb key={img.id} img={img} />)}
+        {/* Banner: recortando */}
+        {processingCount > 0 && (
+          <div className="mx-3 mb-2 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2">
+            <Loader2 size={12} className="text-blue-500 animate-spin flex-shrink-0" />
+            <span className="text-xs font-semibold text-blue-700">Eliminando fondos… {stats.done}/{stats.total}</span>
+            <div className="ml-auto h-1.5 w-14 bg-blue-200 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-500 rounded-full transition-all"
+                style={{ width: `${stats.total ? Math.round(stats.done / stats.total * 100) : 0}%` }} />
+            </div>
           </div>
+        )}
 
-          {exteriorDone.length > 1 && !applying && (
-            <p className="text-[11px] text-slate-400 mt-2 text-center">
-              Tocá el <b>✓</b> en las fotos para aplicar fondos distintos por grupo
+        {/* Banner: aplicando fondo */}
+        {applying && (
+          <div className="mx-3 mb-2 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+            <Spinner size="xs" color="text-blue-600" />
+            <span className="text-xs font-semibold text-slate-700">Aplicando fondo… {progress}%</span>
+            <div className="ml-auto h-1.5 w-14 bg-slate-200 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-600 rounded-full transition-all" style={{ width: `${progress}%` }} />
+            </div>
+            <button onClick={() => { abortRef.current?.abort(); stopRef.current = true; applyToken.current++; setStopping(true) }}
+              disabled={stopping}
+              className="text-[10px] text-red-500 font-semibold disabled:opacity-40 ml-1">
+              {stopping ? '…' : 'Detener'}
+            </button>
+          </div>
+        )}
+
+        {/* Grid 4 col */}
+        <div className="px-3 pb-3">
+          {images.length > 0
+            ? <div className="grid grid-cols-4 gap-2">{images.map(img => <Thumb key={img.id} img={img} />)}</div>
+            : <p className="text-xs text-slate-400 text-center py-6">No hay imágenes cargadas.</p>
+          }
+          {selected.size > 0 && (
+            <p className="text-[10px] text-blue-600 font-semibold mt-1.5 text-center">
+              {selected.size} seleccionada{selected.size !== 1 ? 's' : ''} — fondo solo para estas
             </p>
           )}
         </div>
-      ) : (
-        <Card className="p-8 text-center">
-          <p className="text-sm text-slate-500">No hay imágenes exteriores procesadas.</p>
-          <Btn variant="secondary" className="mt-3" onClick={onBack}>← Volver</Btn>
-        </Card>
-      )}
+      </div>
 
-      {/* ── 2. FONDO — selector de preset + imagen personalizada ── */}
-      <Card className="p-4">
-        <SectionLabel>Elegir fondo</SectionLabel>
-        {/* Scroll horizontal de presets — mucho más compacto en mobile */}
-        <div className="flex gap-3 overflow-x-auto pb-2"  style={{ WebkitOverflowScrolling: 'touch' }}>
-          {BG_PRESETS.map(p => {
-            const active = preset === p.id && !customFile && !aiSceneId
-            return (
-              <button key={p.id} onClick={() => selectPreset(p.id)}
-                className="flex-shrink-0 flex flex-col items-center gap-1.5">
-                <div className={`w-12 h-10 rounded-xl border-2 transition-all
-                  ${active ? 'border-blue-600 ring-2 ring-blue-100 scale-105' : 'border-slate-200 hover:border-slate-300'}`}
-                  style={p.style} />
-                <span className={`text-[10px] font-semibold leading-none
-                  ${active ? 'text-blue-700' : 'text-slate-500'}`}>
-                  {p.label}
-                </span>
-              </button>
-            )
-          })}
+      {/* ══════════════════════════════════════
+          BLOQUE 2 — FONDOS PERSONALIZADOS
+      ══════════════════════════════════════ */}
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+        <p className="px-4 pt-3 pb-0 text-[11px] font-bold uppercase tracking-wide text-slate-400">Fondos personalizados</p>
+
+        {/* Colores */}
+        <div className="px-4 pt-2.5 pb-1">
+          <p className="text-xs font-semibold text-slate-600 mb-2">Colores</p>
+          <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
+            {BG_PRESETS.map(p => {
+              const active = preset === p.id && !customFile && !aiSceneId
+              return (
+                <button key={p.id} onClick={() => selectPreset(p.id)}
+                  className="flex-shrink-0 flex flex-col items-center gap-1">
+                  <div className={`w-14 h-10 rounded-xl border-2 transition-all
+                    ${active ? 'border-blue-600 ring-2 ring-blue-100 scale-105' : 'border-slate-200 hover:border-slate-300'}`}
+                    style={p.style} />
+                  <span className={`text-[9px] font-semibold ${active ? 'text-blue-700' : 'text-slate-400'}`}>{p.label}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
 
-        {/* Fondo personalizado */}
-        <label className={`block cursor-pointer rounded-xl border border-dashed overflow-hidden transition-all mt-3
-          ${customUrl ? 'border-transparent' : 'border-slate-200 hover:border-blue-400 bg-slate-50'}`}>
-          <input type="file" accept="image/*" className="hidden"
-            onChange={e => {
-              const f = e.target.files[0]
-              if (f) { setCustomFile(f); setCustomUrl(URL.createObjectURL(f)); setPreset(null); setAiSceneId(null); addBg(f) }
-            }} />
-          {customUrl
-            ? <div className="relative group h-14">
-                <img src={customUrl} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                  <span className="opacity-0 group-hover:opacity-100 text-white text-xs font-semibold bg-black/60 px-2 py-1 rounded">Cambiar</span>
+        {/* Mis imágenes */}
+        <div className="px-4 pb-4">
+          <p className="text-xs font-semibold text-slate-600 mb-2">Mis imágenes</p>
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            {/* Agregar */}
+            <label className="flex-shrink-0 cursor-pointer flex flex-col items-center gap-1">
+              <input ref={customImgRef} type="file" accept="image/*" className="hidden"
+                onChange={e => {
+                  const f = e.target.files[0]
+                  if (f) { setCustomFile(f); setCustomUrl(URL.createObjectURL(f)); setPreset(null); setAiSceneId(null); addBg(f); markDirty() }
+                }} />
+              <div className={`w-14 h-10 rounded-xl border-2 border-dashed flex items-center justify-center transition-all
+                ${customUrl ? 'border-blue-400' : 'border-slate-200 hover:border-blue-400'}`}>
+                <ImagePlus size={14} className="text-slate-400" />
+              </div>
+              <span className="text-[9px] text-slate-400">Agregar</span>
+            </label>
+
+            {/* Imagen activa */}
+            {customUrl && (
+              <div className="relative flex-shrink-0 flex flex-col items-center gap-1 group">
+                <div className="w-14 h-10 rounded-xl border-2 border-blue-600 ring-2 ring-blue-100 overflow-hidden">
+                  <img src={customUrl} className="w-full h-full object-cover" alt="" />
                 </div>
-                <button onClick={e => { e.preventDefault(); setCustomFile(null); setCustomUrl(null); setPreset('azul') }}
-                  className="absolute top-1.5 right-1.5 w-5 h-5 bg-black/60 text-white rounded flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <X size={10} />
+                <span className="text-[9px] text-blue-600 font-semibold">Activa</span>
+                <button onClick={() => { setCustomFile(null); setCustomUrl(null); setPreset('azul'); markDirty() }}
+                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 z-10">
+                  <X size={8} />
                 </button>
               </div>
-            : <div className="flex items-center gap-2 px-3 py-2.5">
-                <ImagePlus size={14} className="text-slate-400" strokeWidth={1.5} />
-                <span className="text-xs text-slate-500">Subir imagen de fondo propia</span>
-              </div>
-          }
-        </label>
+            )}
 
-        {/* Recientes */}
-        {recentBgs.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-1 mt-2.5" style={{ scrollbarWidth: 'none' }}>
+            {/* Recientes */}
             {recentBgs.map(bg => (
-              <div key={bg._id} className="relative flex-shrink-0 group">
+              <div key={bg._id} className="relative flex-shrink-0 flex flex-col items-center gap-1 group">
                 <button onClick={() => {
                   const [header, b64] = bg.dataUrl.split(',')
                   const mime = header.match(/:(.*?);/)?.[1] || 'image/jpeg'
                   const bytes = atob(b64); const arr = new Uint8Array(bytes.length)
                   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
                   setCustomFile(new File([arr], bg.name, { type: mime }))
-                  setCustomUrl(bg.dataUrl); setPreset(null); setAiSceneId(null)
+                  setCustomUrl(bg.dataUrl); setPreset(null); setAiSceneId(null); markDirty()
                 }}
-                  className={`w-16 h-10 rounded-lg border-2 overflow-hidden block transition-all
-                    ${customFile?.name === bg.name && customUrl === bg.dataUrl ? 'border-blue-600 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-300'}`}>
+                  className={`w-14 h-10 rounded-xl border-2 overflow-hidden block transition-all
+                    ${customUrl === bg.dataUrl ? 'border-blue-600 ring-2 ring-blue-100' : 'border-slate-200 hover:border-blue-300'}`}>
                   <img src={bg.dataUrl} className="w-full h-full object-cover" alt="" />
                 </button>
                 <button onClick={e => { e.stopPropagation(); deleteBg(bg._id) }}
-                  className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 z-10">
+                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 z-10">
                   <X size={8} />
                 </button>
               </div>
             ))}
           </div>
-        )}
-      </Card>
+        </div>
+      </div>
 
-      {/* ── 3. FONDO CON IA — colapsable, cerrado por defecto ── */}
-      <Card className="overflow-hidden">
-        <button onClick={() => setShowAiPanel(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-slate-50 transition-colors min-h-[52px]">
-          <div className="flex items-center gap-2.5">
-            <Sparkles size={15} className="text-violet-500 flex-shrink-0" />
-            <span className="text-sm font-semibold text-slate-700">Fondo con IA</span>
-            {aiSceneId && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md">● Activo</span>}
-          </div>
-          {showAiPanel ? <ChevronUp size={16} className="text-slate-400 flex-shrink-0" /> : <ChevronDown size={16} className="text-slate-400 flex-shrink-0" />}
-        </button>
+      {/* ══════════════════════════════════════
+          BLOQUE 3 — IA
+      ══════════════════════════════════════ */}
+      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+        <p className="px-4 pt-3 pb-0 text-[11px] font-bold uppercase tracking-wide text-slate-400">IA</p>
 
-        <div className={`grid transition-all duration-300 ease-in-out ${showAiPanel ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-          <div className="overflow-hidden">
-        <div className="border-t border-slate-100 p-4 space-y-3">
-            <div className="grid grid-cols-3 gap-2">
-              {AI_SCENES.map(s => (
-                <button key={s.id} onClick={() => selectAiScene(s.id)}
-                  className={`h-14 rounded-xl text-xs font-semibold transition-all border-2 flex flex-col items-center justify-center gap-1
-                    ${aiSceneId === s.id
-                      ? 'border-violet-500 bg-violet-50 text-violet-700 ring-2 ring-violet-100'
-                      : 'border-slate-200 bg-white text-slate-600 hover:border-violet-300'}`}>
-                  <span className="text-base leading-none">{s.emoji}</span>
-                  {s.label}
-                </button>
-              ))}
+        {/* Sombra debajo del auto */}
+        <div className="px-4 pt-3 pb-3">
+          <label className="flex items-center justify-between cursor-pointer select-none">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Sombra debajo del auto</p>
+              <p className="text-[11px] text-slate-400">Efecto realista de apoyo</p>
             </div>
-            <input type="text" value={aiSceneId === 'custom' ? customPrompt : ''}
-              onChange={e => { setCustomPrompt(e.target.value); selectAiScene('custom') }}
-              onFocus={() => { if (customPrompt || aiSceneId !== 'custom') selectAiScene('custom') }}
-              placeholder="o describí tu escena… (ej: garage de lujo, piso negro)"
-              className={`w-full text-sm rounded-xl border px-3 py-2.5 outline-none transition-colors
-                ${aiSceneId === 'custom' ? 'border-violet-400 ring-2 ring-violet-100' : 'border-slate-200 focus:border-violet-300'}`} />
-            {useAi && (
-              <div className="flex items-start gap-2 bg-violet-50 border border-violet-200 rounded-xl px-3 py-2.5">
-                <Sparkles size={13} className="text-violet-500 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-violet-700 leading-snug">
-                  La IA genera la escena completa con luz y sombra incluidas. Tocá <b>Aplicar</b> para generar.
-                </p>
+            <div className="relative flex-shrink-0 ml-3">
+              <input type="checkbox" className="sr-only peer"
+                checked={shadow} onChange={e => { setShadow(e.target.checked); markDirty() }} />
+              <div className="w-11 h-6 bg-slate-200 rounded-full peer-checked:bg-blue-600
+                after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white
+                after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-5" />
+            </div>
+          </label>
+          {shadow && (
+            <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              <AlertCircle size={12} className="text-amber-500 mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-amber-700">La sombra consume créditos al aplicar. Tocá <b>Aplicar</b> cuando estés listo.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Fondos generados — escenas IA */}
+        <div className="border-t border-slate-100 px-4 py-3">
+          <p className="text-xs font-semibold text-slate-600 mb-2.5">Fondos generados</p>
+          <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+            {AI_SCENES.map(s => (
+              <button key={s.id} onClick={() => selectAiScene(s.id)}
+                className={`flex-shrink-0 flex flex-col items-center gap-1.5 w-16`}>
+                <div className={`w-16 h-11 rounded-xl border-2 flex flex-col items-center justify-center gap-0.5 transition-all
+                  ${aiSceneId === s.id ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-100' : 'border-slate-200 bg-slate-50 hover:border-violet-300'}`}>
+                  <span className="text-lg leading-none">{s.emoji}</span>
+                </div>
+                <span className={`text-[9px] font-semibold ${aiSceneId === s.id ? 'text-violet-700' : 'text-slate-500'}`}>{s.label}</span>
+              </button>
+            ))}
+            {/* Prompt propio */}
+            <button onClick={() => { setShowPrompt(v => !v); if (!showPrompt) selectAiScene('custom') }}
+              className={`flex-shrink-0 flex flex-col items-center gap-1.5 w-16`}>
+              <div className={`w-16 h-11 rounded-xl border-2 flex items-center justify-center transition-all
+                ${aiSceneId === 'custom' ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-100' : 'border-slate-200 border-dashed bg-slate-50 hover:border-violet-300'}`}>
+                <Sparkles size={16} className={aiSceneId === 'custom' ? 'text-violet-600' : 'text-slate-400'} />
               </div>
-            )}
+              <span className={`text-[9px] font-semibold ${aiSceneId === 'custom' ? 'text-violet-700' : 'text-slate-500'}`}>Tu prompt</span>
+            </button>
           </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* ── 4. POSICIÓN Y SOMBRA — colapsable, cerrado por defecto ── */}
-      <Card className="overflow-hidden">
-          <button onClick={() => setShowPosition(v => !v)}
-            className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-slate-50 transition-colors min-h-[52px]">
-            <span className="text-sm font-semibold text-slate-700">Posición y sombra</span>
-            <div className="flex items-center gap-2">
-              {shadow && <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md">Sombra IA</span>}
-              {showPosition ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
+          {showPrompt && (
+            <textarea autoFocus value={customPrompt}
+              onChange={e => { setCustomPrompt(e.target.value); selectAiScene('custom') }}
+              placeholder="ej: garage de lujo, piso negro brillante"
+              rows={2}
+              className="mt-2 w-full text-sm rounded-xl border border-violet-300 ring-2 ring-violet-100 px-3 py-2 outline-none resize-none" />
+          )}
+          {useAi && (
+            <div className="mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+              <AlertCircle size={12} className="text-amber-500 mt-0.5 flex-shrink-0" />
+              <p className="text-[11px] text-amber-700">Cada foto con IA <b>consume créditos</b>. Tocá <b>Generar</b> cuando estés listo.</p>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Barra inferior — 2 elementos: ← + CTA ── */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-t border-slate-200 px-4 pt-3 pb-4">
+        <div className="max-w-2xl mx-auto flex items-center gap-2">
+
+          {/* Volver */}
+          <button onClick={onBack}
+            className="flex-shrink-0 w-11 h-11 flex items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50 transition-colors">
+            <ArrowLeft size={18} />
           </button>
-          <div className={`grid transition-all duration-300 ease-in-out ${showPosition ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-            <div className="overflow-hidden">
-            <div className="border-t border-slate-100 p-4 space-y-4">
-              {useAi ? (
-                <p className="text-xs text-slate-400 leading-snug">
-                  Con <b>Fondo IA</b> activo, la IA posiciona el auto automáticamente dentro de la escena.
-                  Los sliders de posición aplican solo con fondos comunes.
-                </p>
-              ) : (
-                <>
-                  <Slider label="Tamaño del auto"     value={scale} min={10} max={120} unit="%" onChange={setScale} />
-                  <Slider label="Posición horizontal" value={posX}  min={0}  max={100} unit="%" onChange={setPosX} />
-                  <Slider label="Posición vertical"   value={posY}  min={0}  max={100} unit="%" onChange={setPosY} />
-                </>
-              )}
-              <Toggle label="Sombra realista (IA)" value={shadow} onChange={setShadow} disabled={useAi} />
-              {shadow && (
-                <>
-                  {!useAi && <Slider label="Intensidad de la sombra" value={shadowIntensity} min={0} max={100} unit="%" onChange={setShadowIntensity} />}
-                  <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-                    <AlertCircle size={13} className="text-amber-500 mt-0.5 flex-shrink-0" />
-                    <p className="text-xs text-amber-700 leading-snug">
-                      Si usás <b>Fondo IA</b>, la escena ya incluye su propia sombra.
-                    </p>
-                  </div>
-                </>
-              )}
-            </div>
-            </div>
-          </div>
-      </Card>
 
-      {/* ── 5. MEJORAS IA — colapsable ── */}
-      <Card className="overflow-hidden">
-        <button onClick={() => setShowMejoras(v => !v)}
-          className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-slate-50 transition-colors min-h-[52px]">
-          <div className="flex items-center gap-2">
-            <Sparkles size={15} className="text-violet-500" />
-            <span className="text-sm font-semibold text-slate-700">Mejoras IA</span>
-          </div>
-          {showMejoras ? <ChevronUp size={16} className="text-slate-400" /> : <ChevronDown size={16} className="text-slate-400" />}
-        </button>
-        <div className={`grid transition-all duration-300 ease-in-out ${showMejoras ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
-          <div className="overflow-hidden">
-            <div className="border-t border-slate-100 p-4 space-y-2.5">
-              <Toggle label="Mejorar resolución (fotos de baja calidad)" value={upscale} onChange={setUpscale} />
-              <Toggle label="Mejorar iluminación (relighting)" value={relight} onChange={setRelight} />
-              <p className="text-[11px] text-slate-400 leading-snug">
-                Solo con <b>Fondo IA</b> o <b>Sombra IA</b> activos.{upscale && ' Upscale actúa solo en fotos de baja resolución.'}
-              </p>
-            </div>
-          </div>
-        </div>
-      </Card>
-
-      {/* ── Barra fija inferior ── */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-sm border-t border-slate-200 px-4 pt-3 pb-4 pb-safe">
-        <div className="max-w-2xl mx-auto space-y-2">
-
-          {/* Fila 1: Aplicar — acción principal */}
-          <div className="flex gap-2">
-            <Btn variant="secondary" onClick={onBack} className="flex-shrink-0 px-3">
-              ← Atrás
-            </Btn>
-            <Btn variant="primary" size="full"
-              onClick={applyAll}
-              disabled={!hasBg || exteriorDone.length === 0 || applying}>
-              {applying
-                ? <><Spinner size="sm" color="text-white" /> Aplicando… {progress}%</>
-                : <><RefreshCw size={14} /> {
-                    selected.size > 0
-                      ? `Aplicar a ${selected.size} foto${selected.size !== 1 ? 's' : ''}`
-                      : useAi ? 'Generar con IA'
-                      : (shadow && !preset && !customFile) ? 'Aplicar sombra'
-                      : 'Aplicar'
-                  }</>}
-            </Btn>
-          </div>
-
-          {/* Fila 2: Siguiente — cuando hay resultados */}
-          <Btn variant={composedCount > 0 ? 'primary' : 'secondary'} size="full"
-            disabled={exteriorDone.length === 0}
-            onClick={onNext}>
-            {composedCount > 0
-              ? `Siguiente → descargar ${composedCount} foto${composedCount !== 1 ? 's' : ''}`
-              : 'Siguiente →'}
-          </Btn>
+          {/* CTA principal */}
+          <button
+            onClick={ctaIsView ? onNext : applyAll}
+            disabled={(!hasBg && !ctaIsView) || exteriorDone.length === 0 || applying}
+            className={`flex-1 h-11 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all
+              ${applying || ((!hasBg || exteriorDone.length === 0) && !ctaIsView)
+                ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                : ctaIsView
+                  ? 'bg-green-600 hover:bg-green-700 text-white'
+                  : useAi
+                    ? 'bg-violet-600 hover:bg-violet-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white'}`}>
+            {applying
+              ? <><Spinner size="sm" color="text-white" /> Aplicando… {progress}%</>
+              : ctaIsView
+                ? <><ChevronRight size={16} /> {ctaLabel()}</>
+                : <><Play size={14} /> {ctaLabel()}</>
+            }
+          </button>
         </div>
       </div>
     </div>
