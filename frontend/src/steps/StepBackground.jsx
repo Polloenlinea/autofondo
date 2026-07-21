@@ -213,7 +213,17 @@ export default function StepBackground({
             </button>
           )}
         </div>
-        <p className="text-[9px] text-slate-400 truncate px-1.5 py-1">{img.file?.name}</p>
+        <div className="flex items-center gap-1 px-1.5 py-1">
+          <p className="text-[9px] text-slate-400 truncate flex-1">{img.file?.name}</p>
+          {!isInterior && !isProcessing && (
+            <button
+              onClick={() => onEdit?.(img.id)}
+              title="Retocar imagen"
+              className="w-5 h-5 flex items-center justify-center rounded bg-slate-100 text-slate-400 hover:bg-blue-50 hover:text-blue-600 transition-colors flex-shrink-0">
+              <Pencil size={9} />
+            </button>
+          )}
+        </div>
       </div>
     )
   }
