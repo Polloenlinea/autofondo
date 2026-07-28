@@ -30,11 +30,11 @@ export default function UsageBadge() {
   return (
     <div
       title={`Generaciones IA:\n• Sombra IA: ${u.shadow}\n• Fondo IA: ${u.scene}\n• Total: ${u.total}\n\nFondos comunes y quitar-fondo no generan IA.\nDesde: ${new Date(u.since).toLocaleString('es-AR')}`}
-      className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-violet-50 text-violet-700 select-none cursor-default"
+      className="fixed bottom-1.5 left-2 z-50 flex items-center gap-1 select-none cursor-default pointer-events-auto"
+      style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', color: 'rgba(255,255,255,.3)', background: 'rgba(17,17,17,.7)', backdropFilter: 'blur(4px)', padding: '2px 7px', borderRadius: '4px' }}
     >
-      <Sparkles size={14} className="flex-shrink-0" />
-      <span className="text-xs font-semibold tabular-nums">{u.total}</span>
-      <span className="hidden sm:inline text-[10px] text-violet-400 font-medium">IA</span>
+      <Sparkles size={10} className="flex-shrink-0" />
+      <span className="tabular-nums">{u.total} IA</span>
     </div>
   )
 }

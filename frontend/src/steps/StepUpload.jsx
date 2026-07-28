@@ -160,8 +160,8 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
       {images.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
           {/* Header con contador */}
-          <div className="flex items-center justify-between px-4 pt-3 pb-2">
-            <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">
+          <div className="flex items-center justify-between px-4 py-2.5" style={{ background: '#F9F8F6', borderBottom: '1px solid #E2E0DB' }}>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '9.5px', fontWeight: 500, color: '#737069', textTransform: 'uppercase', letterSpacing: '0.16em' }}>
               Fotos seleccionadas
             </span>
             <span className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg">
@@ -222,7 +222,7 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
         <label className="flex items-center gap-3 px-4 py-3.5 cursor-pointer select-none">
           <ShieldCheck size={17} className={plateOptions.hidePlate ? 'text-blue-600' : 'text-slate-400'} />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-slate-700">Tapar matrícula</p>
+            <p style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '13px', fontWeight: 600, color: '#111111' }}>Tapar matrícula</p>
             <p className="text-[11px] text-slate-400">Oculta la patente en la foto final</p>
           </div>
           <div className="relative flex-shrink-0">
@@ -239,7 +239,7 @@ export default function StepUpload({ images, rejected, addFiles, toggleType, eff
         <div className="px-4 py-3.5">
           <div className="flex items-center justify-between mb-2.5">
             <div>
-              <p className="text-sm font-semibold text-slate-700">Calidad de recorte</p>
+              <p style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '13px', fontWeight: 600, color: '#111111' }}>Calidad de recorte</p>
               <p className="text-[11px] text-slate-400">Precisión del fondo removido</p>
             </div>
             <div className="flex gap-1.5">

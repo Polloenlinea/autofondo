@@ -21,6 +21,38 @@ html { font-family: 'Inter', system-ui, sans-serif; }
 /* ── Safe areas (iPhone notch) ───────────────────────────────────────────── */
 .pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
 
+/* ── Mobile warning overlay ──────────────────────────────────────────────── */
+.mobile-warning-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 99999;
+  background: rgba(0,0,0,.7); backdrop-filter: blur(8px);
+  align-items: flex-end; justify-content: center;
+}
+@media (max-width: 768px) {
+  .mobile-warning-overlay { display: flex; }
+}
+.mobile-warning-overlay.dismissed { display: none !important; }
+.mobile-warning-box {
+  background: #fff; width: 100%; max-width: 480px;
+  border-radius: 16px 16px 0 0; padding: 28px 24px 36px;
+  text-align: center;
+}
+.mobile-warning-icon { font-size: 36px; margin-bottom: 14px; }
+.mobile-warning-box h2 {
+  font-size: 19px; font-weight: 700; color: #111111;
+  letter-spacing: -.4px; margin-bottom: 10px;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.mobile-warning-box p {
+  font-size: 13.5px; color: #737069; line-height: 1.65; margin-bottom: 22px;
+}
+.mobile-warning-box button {
+  width: 100%; padding: 13px; border: none; border-radius: 8px;
+  background: #111111; color: #fff;
+  font-size: 14px; font-weight: 600; font-family: 'Inter', sans-serif; cursor: pointer;
+  -webkit-appearance: none; appearance: none;
+}
+
 /* ── Range slider ────────────────────────────────────────────────────────── */
 input[type="range"] {
   -webkit-appearance: none;
@@ -53,3 +85,70 @@ input[type="range"]::-moz-range-thumb {
 * { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+
+/* ══ Brand Kit — Artificialmente / AutoFondo ════════════════════════════════
+   Tokens de color y tipografía. Sin resets — Tailwind maneja el layout.
+   ══════════════════════════════════════════════════════════════════════════ */
+:root {
+  --brand-accent:    #795989;
+  --brand-accent-dk: #5e4470;
+  --brand-accent-lt: rgba(121,89,137,.08);
+  --brand-dark:      #111111;
+  --brand-bg:        #F5F4F1;
+  --brand-surface:   #FFFFFF;
+  --brand-border:    #E2E0DB;
+  --brand-muted:     #737069;
+}
+
+/* ── Página ──────────────────────────────────────────────────────────────── */
+body         { background-color: var(--brand-bg) !important; }
+.min-h-screen { background-color: var(--brand-bg) !important; }
+
+/* ── Header — fondo oscuro fijo, no se pisa con overrides de surface ──────── */
+/* (el color real se aplica via inline style en App.jsx) */
+
+/* ── Cards y panels ──────────────────────────────────────────────────────── */
+.bg-white    { background-color: var(--brand-surface) !important; }
+.bg-slate-50 { background-color: var(--brand-bg) !important; }
+
+/* ── Bordes cálidos ──────────────────────────────────────────────────────── */
+.border-slate-100, .border-slate-200 { border-color: var(--brand-border) !important; }
+.divide-slate-100 > * + * { border-color: var(--brand-border) !important; }
+
+/* ── Border radius — más sutil, igual que AutoAgenda ────────────────────── */
+.rounded-2xl { border-radius: 8px !important; }
+.rounded-xl  { border-radius: 6px !important; }
+.rounded-lg  { border-radius: 6px !important; }
+
+/* ── Tipografía ──────────────────────────────────────────────────────────── */
+/* Títulos de sección y texto bold principal */
+h1, h2, h3, .font-heading,
+.font-extrabold, .font-bold.text-lg,
+.font-bold.text-xl, .font-bold.text-2xl { font-family: 'Plus Jakarta Sans', 'Inter', sans-serif !important; }
+/* Labels uppercase (FOTOS SELECCIONADAS, etc.) */
+.uppercase.tracking-wide { font-family: 'JetBrains Mono', monospace !important; font-size: 10px !important; }
+/* Badges de conteo / datos técnicos */
+.font-mono    { font-family: 'JetBrains Mono', monospace !important; }
+
+/* ── Botones primarios: azul/verde/violeta → dark ────────────────────────── */
+.bg-blue-600                { background-color: var(--brand-dark) !important; }
+.bg-blue-700                { background-color: #242424 !important; }
+.hover\:bg-blue-700:hover   { background-color: #242424 !important; }
+.bg-green-600               { background-color: var(--brand-dark) !important; }
+.hover\:bg-green-700:hover  { background-color: #242424 !important; }
+.bg-violet-600              { background-color: var(--brand-dark) !important; }
+.hover\:bg-violet-700:hover { background-color: #242424 !important; }
+.shadow-blue-200            { box-shadow: 0 4px 14px rgba(0,0,0,.18) !important; }
+
+/* ── Toggle checkbox activo ──────────────────────────────────────────────── */
+.peer:checked ~ .peer-checked\:bg-blue-600 { background-color: var(--brand-dark) !important; }
+
+/* ── Range slider ────────────────────────────────────────────────────────── */
+input[type="range"]::-webkit-slider-thumb {
+  background: var(--brand-dark);
+  box-shadow: 0 0 0 3px #fff, 0 0 0 4px var(--brand-dark);
+}
+input[type="range"]::-moz-range-thumb {
+  background: var(--brand-dark);
+  box-shadow: 0 0 0 2px var(--brand-dark);
+}

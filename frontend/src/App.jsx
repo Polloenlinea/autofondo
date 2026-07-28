@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { History, Save } from 'lucide-react'
+import { History, Save, LogOut } from 'lucide-react'
 import StepBar        from './components/StepBar'
 import ConfirmDialog  from './components/ConfirmDialog'
 import StepUpload     from './steps/StepUpload'
@@ -18,6 +18,8 @@ import { useSessions } from './hooks/useSessions'
 const APP_VERSION = 'v0.14.0 · defringe + contador IA'
 
 export default function App() {
+  const logout = () => { sessionStorage.removeItem('af_code'); window.location.href = '/login' }
+
   const [step,         setStep]         = useState(0)
   const [outputSize,   setOutputSize]   = useState('original')
   const [showSessions, setShowSessions] = useState(false)
@@ -124,60 +126,78 @@ export default function App() {
     <div className="min-h-screen bg-slate-50">
 
       {/* ── Header ── */}
-      <header className="relative bg-white border-b border-slate-200 sticky top-0 z-40">
-        {/* Branding del ecosistema — desktop (espacio libre a la derecha del contenido) */}
+      <header className="relative sticky top-0 z-40" style={{ background: '#111111', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
+        {/* Branding del ecosistema — desktop */}
         <div className="hidden lg:flex items-center gap-2 absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none select-none">
-          <span className="text-[11px] text-slate-400 font-medium">una herramienta de</span>
-          <img src="/brands/logo-autohub.svg" alt="AutoHub" className="h-5 w-auto" />
-          <span className="text-slate-300 mx-0.5">·</span>
-          <span className="text-[11px] text-slate-400 font-medium">powered by</span>
-          <img src="/brands/logo-artificialmente-h.svg" alt="Artificialmente" className="h-4 w-auto" />
+          <span className="text-[11px] font-medium" style={{ color: 'rgba(255,255,255,.3)' }}>una herramienta de</span>
+          <img src="/brands/logo-autohub.svg" alt="AutoHub" className="h-5 w-auto opacity-30" style={{ filter: 'invert(1)' }} />
+          <span style={{ color: 'rgba(255,255,255,.15)' }} className="mx-0.5">·</span>
+          <span className="text-[11px] font-medium" style={{ color: 'rgba(255,255,255,.3)' }}>powered by</span>
+          <img src="/brands/logo-artificialmente-h.svg" alt="Artificialmente" className="h-4 w-auto opacity-30" style={{ filter: 'invert(1)' }} />
         </div>
         <div className="max-w-2xl mx-auto px-4 flex items-center gap-3" style={{ minHeight: '60px' }}>
           {/* Volver a la landing */}
           <a href="/" title="Volver a la landing"
-            className="flex items-center gap-1 text-slate-400 hover:text-slate-600 transition-colors flex-shrink-0 text-xs font-medium">
+            className="flex items-center gap-1 flex-shrink-0 text-xs font-medium transition-colors"
+            style={{ color: 'rgba(255,255,255,.35)' }}
+            onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,.7)'}
+            onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,.35)'}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
             </svg>
             <span className="hidden sm:inline">Inicio</span>
           </a>
 
-          {/* Logo AutoFondo */}
+          {/* Logo AutoFondo — blanco sobre oscuro */}
           <div className="flex items-center flex-shrink-0">
-            <img src="/brands/logo-autofondo-dark.svg" alt="AutoFondo" className="h-6 sm:h-7 w-auto flex-shrink-0" />
+            <img src="/brands/logo-autofondo-dark.svg" alt="AutoFondo"
+              className="h-6 sm:h-7 w-auto flex-shrink-0"
+              style={{ filter: 'invert(1)' }} />
           </div>
 
-          <div className="w-px h-5 bg-slate-200 flex-shrink-0 hidden sm:block" />
+          <div className="w-px h-5 flex-shrink-0 hidden sm:block" style={{ background: 'rgba(255,255,255,.12)' }} />
 
-          {/* StepBar ocupa el espacio disponible */}
+          {/* StepBar */}
           <div className="flex-1 min-w-0 py-1">
             <StepBar current={step} />
           </div>
 
           {/* Acciones derecha */}
           <div className="flex items-center gap-1 flex-shrink-0">
-            <UsageBadge />
             {hasWork && (
               <button onClick={() => setShowSaveModal(true)}
                 title="Guardar borrador para retomar después"
-                className="flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900
-                  transition-colors px-2 py-2 rounded-lg hover:bg-blue-50 min-h-[44px]">
+                className="flex items-center gap-1 text-xs font-semibold transition-colors px-2 py-2 rounded-lg min-h-[44px]"
+                style={{ color: 'rgba(255,255,255,.5)' }}
+                onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,.5)'}>
                 <Save size={15} /> <span className="hidden sm:inline">Guardar</span>
               </button>
             )}
             {step > 0 && (
               <button onClick={requestReset}
-                className="text-xs font-semibold text-slate-400 hover:text-slate-600
-                  transition-colors px-2 py-2 rounded-lg hover:bg-slate-100 min-h-[44px]">
+                className="text-xs font-semibold transition-colors px-2 py-2 rounded-lg min-h-[44px]"
+                style={{ color: 'rgba(255,255,255,.35)' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,.7)'}
+                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,.35)'}>
                 Reiniciar
               </button>
             )}
             <button onClick={() => setShowSessions(true)}
               title="Historial de borradores"
-              className="w-10 h-10 flex items-center justify-center rounded-xl text-slate-400
-                hover:text-slate-700 hover:bg-slate-100 transition-colors">
+              className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors"
+              style={{ color: 'rgba(255,255,255,.4)' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+              onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,.4)'}>
               <History size={18} />
+            </button>
+            <button onClick={logout}
+              title="Salir"
+              className="w-10 h-10 flex items-center justify-center rounded-xl transition-colors"
+              style={{ color: 'rgba(255,255,255,.4)' }}
+              onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,100,100,.9)'}
+              onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,.4)'}>
+              <LogOut size={16} />
             </button>
           </div>
         </div>

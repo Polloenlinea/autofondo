@@ -7,9 +7,23 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>AutoFondo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+
+    <!-- Mobile warning (puro CSS + JS mínimo, sin tocar React) -->
+    <div class="mobile-warning-overlay" id="mobile-warning">
+      <div class="mobile-warning-box">
+        <div class="mobile-warning-icon">💻</div>
+        <h2>Sugerencia</h2>
+        <p>AutoFondo tiene una navegabilidad más cómoda desde la PC. Podés continuar desde acá sin problemas, pero desde la computadora vas a tener una experiencia más agradable.</p>
+        <button onclick="document.getElementById('mobile-warning').classList.add('dismissed'); localStorage.setItem('af-mw','1')">Continuar igual</button>
+      </div>
+    </div>
+    <script>if (localStorage.getItem('af-mw')) document.getElementById('mobile-warning').classList.add('dismissed')</script>
   </body>
 </html>

@@ -246,8 +246,8 @@ export default function StepBackground({
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-3 pt-3 pb-2">
-          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-400">Aplicar fondo a</span>
+        <div className="flex items-center justify-between px-4 py-2.5" style={{ background: '#F9F8F6', borderBottom: '1px solid #E2E0DB' }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '9.5px', fontWeight: 500, color: '#737069', textTransform: 'uppercase', letterSpacing: '0.16em' }}>Aplicar fondo a</span>
           {exteriorDone.length > 1 && (
             <button onClick={selected.size >= exteriorDone.length ? clearSelected : selectAll}
               className="text-[11px] font-bold text-blue-600 hover:text-blue-800">
@@ -302,11 +302,13 @@ export default function StepBackground({
           BLOQUE 2 — FONDOS PERSONALIZADOS
       ══════════════════════════════════════ */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <p className="px-4 pt-3 pb-0 text-[11px] font-bold uppercase tracking-wide text-slate-400">Fondos personalizados</p>
+        <div className="px-4 py-2.5" style={{ background: '#F9F8F6', borderBottom: '1px solid #E2E0DB' }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '9.5px', fontWeight: 500, color: '#737069', textTransform: 'uppercase', letterSpacing: '0.16em' }}>Fondos personalizados</span>
+        </div>
 
         {/* Colores */}
-        <div className="px-4 pt-2.5 pb-1">
-          <p className="text-xs font-semibold text-slate-600 mb-2">Colores</p>
+        <div className="px-4 pt-3 pb-1">
+          <p style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '13px', fontWeight: 600, color: '#111111', marginBottom: '8px' }}>Colores</p>
           <div className="flex gap-2 overflow-x-auto pb-2" style={{ scrollbarWidth: 'none' }}>
             {BG_PRESETS.map(p => {
               const active = preset === p.id && !customFile && !aiSceneId
@@ -325,7 +327,7 @@ export default function StepBackground({
 
         {/* Mis imágenes */}
         <div className="px-4 pb-4">
-          <p className="text-xs font-semibold text-slate-600 mb-2">Mis imágenes</p>
+          <p style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '13px', fontWeight: 600, color: '#111111', marginBottom: '8px' }}>Mis imágenes</p>
           <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {/* Agregar */}
             <label className="flex-shrink-0 cursor-pointer flex flex-col items-center gap-1">
@@ -384,13 +386,15 @@ export default function StepBackground({
           BLOQUE 3 — IA
       ══════════════════════════════════════ */}
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-        <p className="px-4 pt-3 pb-0 text-[11px] font-bold uppercase tracking-wide text-slate-400">IA</p>
+        <div className="px-4 py-2.5" style={{ background: '#F9F8F6', borderBottom: '1px solid #E2E0DB' }}>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '9.5px', fontWeight: 500, color: '#737069', textTransform: 'uppercase', letterSpacing: '0.16em' }}>IA</span>
+        </div>
 
         {/* Sombra debajo del auto */}
         <div className="px-4 pt-3 pb-3">
           <label className="flex items-center justify-between cursor-pointer select-none">
             <div>
-              <p className="text-sm font-semibold text-slate-700">Sombra debajo del auto</p>
+              <p style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '14px', fontWeight: 600, color: '#111111' }}>Sombra debajo del auto</p>
               <p className="text-[11px] text-slate-400">Efecto realista de apoyo</p>
             </div>
             <div className="relative flex-shrink-0 ml-3">
@@ -411,7 +415,7 @@ export default function StepBackground({
 
         {/* Fondos generados — escenas IA */}
         <div className="border-t border-slate-100 px-4 py-3">
-          <p className="text-xs font-semibold text-slate-600 mb-2.5">Fondos generados</p>
+          <p style={{ fontFamily: "'Plus Jakarta Sans', sans-serif", fontSize: '13px', fontWeight: 600, color: '#111111', marginBottom: '10px' }}>Fondos generados</p>
           <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
             {AI_SCENES.map(s => (
               <button key={s.id} onClick={() => selectAiScene(s.id)}
