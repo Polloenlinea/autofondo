@@ -113,7 +113,7 @@ export default function LoginPage() {
             {/* Input */}
             <input
               type="text"
-              placeholder="Ej: AUTO24"
+              placeholder="Ingresá tu código"
               value={code}
               onChange={e => setCode(e.target.value)}
               autoFocus
